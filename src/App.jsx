@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Lock, Heart, Play, Pause, RotateCcw, Eye, EyeOff } from 'lucide-react';
+import { Lock, Heart, Play, Pause, RotateCcw, Eye, EyeOff, Menu } from 'lucide-react';
 
 /**
- * RHYTHM BOY: ARCADE EDITION - v13.0 (Mobile Perfect)
- * * Changes:
- * - AUTO-ROTATION: Game renders rotated 90deg in portrait mode. No more "Please Rotate" overlay.
- * - LATENCY FIX: Widened hit windows (0.35 -> 0.5) to account for mobile audio latency.
- * - INPUT FIX: Prioritized touchStart events.
- * - LAYOUT: Wider side panels for better ergonomics.
+ * RHYTHM BOY: ARCADE EDITION - v14.0 (Sync & Input Fix)
+ * * Critical Fixes:
+ * - SYNC: Measure state updates are now delayed to match exact audio start time.
+ * (Prevents "vanishing targets" at the end of measures).
+ * - INPUT: Switched to onPointerDown for unified, instant response.
+ * - INPUT: Added 80ms debounce to prevent double-tap glitch on Android.
+ * - ROTATION: Forced layout rotation logic preserved.
  */
 
 // --- Audio Engine ---
@@ -26,7 +27,9 @@ class GrooveEngine {
     this.lookahead = 25.0;
     this.onMeasureStart = null; 
   }
+
   resume() { if (this.ctx.state === 'suspended') { this.ctx.resume(); } }
+
   playKick(time) {
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
@@ -39,6 +42,7 @@ class GrooveEngine {
     osc.start(time);
     osc.stop(time + 0.5);
   }
+
   playSnare(time) {
     const bufferSize = this.ctx.sampleRate * 0.1;
     const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
@@ -57,6 +61,7 @@ class GrooveEngine {
     gain.connect(this.masterGain);
     noise.start(time);
   }
+
   playMetronomeClick(time, isStrong) {
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
@@ -69,6 +74,7 @@ class GrooveEngine {
       osc.start(time);
       osc.stop(time + 0.05);
   }
+
   playFeedback(time, type) {
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
@@ -89,6 +95,7 @@ class GrooveEngine {
     osc.start(time);
     osc.stop(time + 0.15);
   }
+
   scheduler() {
     while (this.nextNoteTime < this.ctx.currentTime + this.scheduleAheadTime) {
       if (this.beatCount === 0) if (this.onMeasureStart) this.onMeasureStart(this.nextNoteTime);
@@ -101,6 +108,7 @@ class GrooveEngine {
     }
     this.timerID = window.setTimeout(this.scheduler.bind(this), this.lookahead);
   }
+
   async start() {
     if (this.isPlaying) return;
     this.resume();
@@ -109,6 +117,7 @@ class GrooveEngine {
     this.nextNoteTime = this.ctx.currentTime + 0.1;
     this.scheduler();
   }
+
   stop() {
     this.isPlaying = false;
     clearTimeout(this.timerID);
@@ -141,59 +150,46 @@ function App() {
   const [highScores, setHighScores] = useState({ 1: [], 2: [], 3: [] });
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [activeBeat, setActiveBeat] = useState(-1);
-  
-  // --- RESPONSIVE LOGIC (Auto-Rotate) ---
-  const [layoutStyle, setLayoutStyle] = useState({});
+  const [scale, setScale] = useState(1);
 
-  useEffect(() => {
-    const handleResize = () => {
-        const w = window.innerWidth;
-        const h = window.innerHeight;
-        const isPortrait = h > w;
-        
-        const gameW = 920; 
-        const gameH = 550; // Add safe area
-        
-        let scale, rotate;
-        
-        if (isPortrait) {
-            // Force 90deg rotation
-            // We want the game width (920) to fit into the phone height (h)
-            // And game height (550) to fit into phone width (w)
-            scale = Math.min(h / gameW, w / gameH) * 0.95;
-            rotate = 'rotate(90deg)';
-        } else {
-            // Standard landscape
-            scale = Math.min(w / gameW, h / gameH) * 0.95;
-            rotate = 'rotate(0deg)';
-        }
-
-        setLayoutStyle({
-            transform: `${rotate} scale(${scale})`,
-            width: `${gameW}px`,
-            height: `${gameH}px`,
-            position: 'absolute',
-            left: '50%',
-            top: '50%',
-            marginLeft: `-${gameW / 2}px`,
-            marginTop: `-${gameH / 2}px`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-        });
-    };
-    
-    window.addEventListener('resize', handleResize);
-    handleResize();
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
+  // --- REFS ---
   const difficultyRef = useRef(1); 
   const measureCountRef = useRef(0);
   const engineRef = useRef(null);
   const animRef = useRef(null);
   const playheadRef = useRef(null);
   const timelineRef = useRef(null); 
+  const lastTapRef = useRef(0); // For debouncing input
+
+  // Responsive Scaling
+  useEffect(() => {
+    const handleResize = () => {
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        const isPortrait = h > w;
+        const gameW = 920; 
+        const gameH = 550;
+        
+        let s, rotate;
+        if (isPortrait) {
+            s = Math.min(h / gameW, w / gameH) * 0.95;
+            rotate = 'rotate(90deg)';
+        } else {
+            s = Math.min(w / gameW, h / gameH) * 0.95;
+            rotate = 'rotate(0deg)';
+        }
+
+        // Apply styles directly to container
+        const container = document.getElementById('game-container');
+        if (container) {
+            container.style.transform = `${rotate} scale(${s})`;
+            container.style.display = 'flex';
+        }
+    };
+    window.addEventListener('resize', handleResize);
+    handleResize();
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => { difficultyRef.current = difficulty; }, [difficulty]);
 
@@ -204,11 +200,24 @@ function App() {
 
   useEffect(() => {
     engineRef.current = new GrooveEngine();
-    engineRef.current.onMeasureStart = (time) => {
-        setMeasureStartTime(time);
-        measureCountRef.current += 1; 
-        generateFullMeasure(measureCountRef.current);
+    
+    // --- CRITICAL SYNC FIX ---
+    // Instead of updating state immediately when the scheduler fires (which is early),
+    // we calculate the delay until the ACTUAL note time and update React state then.
+    engineRef.current.onMeasureStart = (targetTime) => {
+        const ctx = engineRef.current.ctx;
+        const delay = (targetTime - ctx.currentTime) * 1000; // ms
+        
+        // Ensure delay is non-negative
+        const safeDelay = Math.max(0, delay);
+
+        setTimeout(() => {
+            setMeasureStartTime(targetTime);
+            measureCountRef.current += 1; 
+            generateFullMeasure(measureCountRef.current);
+        }, safeDelay);
     };
+
     const savedScores = localStorage.getItem('rhythmBoyHighScores');
     if (savedScores) setHighScores(JSON.parse(savedScores));
     return () => {
@@ -302,6 +311,8 @@ function App() {
               const ctx = engineRef.current.ctx;
               const currentTime = ctx.currentTime;
               const secondsPerBeat = 60 / bpm;
+              
+              // Calculate accurate progress
               const rawProgress = (currentTime - measureStartTime) / (secondsPerBeat * 4);
               const progress = Math.max(0, Math.min(1, rawProgress));
               const currentBeatPos = rawProgress * 4;
@@ -314,8 +325,7 @@ function App() {
               if (playheadRef.current) playheadRef.current.style.left = `${progress * 100}%`;
               
               setTargets(prev => prev.map(t => {
-                  // Relaxed Miss Threshold: 0.5 (Half a beat late allowed before miss)
-                  if (!t.hit && !t.missed && currentBeatPos > t.beatAbsolute + 0.5) {
+                  if (!t.hit && !t.missed && currentBeatPos > t.beatAbsolute + 0.35) {
                       triggerFeedback("MISS", "bad");
                       return { ...t, missed: true };
                   }
@@ -350,7 +360,18 @@ function App() {
 
   useEffect(() => { if (gameOver) saveHighScore(score, difficulty); }, [gameOver]);
 
-  const handleTap = useCallback(() => {
+  // --- INPUT HANDLER ---
+  const handleTap = useCallback((e) => {
+      // Prevent defaults if it's a touch event to stop mouse emulation
+      if (e && e.type === 'pointerdown') {
+          e.preventDefault();
+      }
+
+      // Debounce: Ignore taps closer than 80ms
+      const now = Date.now();
+      if (now - lastTapRef.current < 80) return;
+      lastTapRef.current = now;
+
       if (gameOver) {
           resetGame();
           return;
@@ -373,15 +394,18 @@ function App() {
       }
       const ctx = engineRef.current.ctx;
       const currentBeatPos = ((ctx.currentTime - measureStartTime) / (60 / bpm));
+      
       let bestDiff = Infinity;
       let bestIndex = -1;
+      
       setTargets(prev => {
           prev.forEach((t, i) => {
               if (t.hit || t.missed) return;
               const diff = Math.abs(currentBeatPos - t.beatAbsolute);
               if (diff < bestDiff) { bestDiff = diff; bestIndex = i; }
           });
-          // Relaxed Hit Window: 0.3 (Was 0.25)
+          
+          // Relaxed window for mobile latency
           if (bestIndex !== -1 && bestDiff <= 0.3) {
               const isPerfect = bestDiff <= 0.15;
               const points = isPerfect ? 100 : 50;
@@ -409,7 +433,7 @@ function App() {
   }, [handleTap]);
 
   return (
-    <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', background: '#111' }}>
+    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', overflow: 'hidden', background: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <style>{`
             @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
             .font-pixel { font-family: 'Press Start 2P', monospace; }
@@ -452,6 +476,7 @@ function App() {
                 box-shadow: 0 8px 0 #991b1b, 0 15px 20px rgba(0,0,0,0.4);
                 transition: transform 0.05s, box-shadow 0.05s;
                 border-radius: 8px;
+                touch-action: manipulation;
             }
             .btn-arcade:active, .btn-arcade.pressed {
                 transform: translateY(8px); box-shadow: 0 0 0 #991b1b; background: #dc2626;
@@ -474,8 +499,8 @@ function App() {
             }
       `}</style>
 
-      {/* Main Game Container with Auto-Rotate Logic */}
-      <div style={layoutStyle}>
+      {/* Main Game Container */}
+      <div id="game-container">
           <div className="relative w-full max-w-[900px] bg-[#333] rounded-[40px] p-8 console-shadow border-t border-white/10 flex flex-col items-center">
               <div className="w-full bg-[#171717] rounded-t-lg rounded-b-[30px] p-8 pt-4 shadow-[0_4px_0_#000] mb-8 relative border border-white/5">
                   <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
@@ -580,14 +605,9 @@ function App() {
                   </div>
                   <div className="w-48 flex flex-col items-center justify-start shrink-0">
                       <button 
-                          onMouseDown={handleTap}
-                          onTouchStart={(e) => { 
-                              e.preventDefault(); 
-                              setIsSpacePressed(true); 
-                              handleTap(); 
-                              setTimeout(() => setIsSpacePressed(false), 100);
-                          }}
+                          onPointerDown={handleTap}
                           className={`w-32 h-32 btn-arcade group flex items-center justify-center ${isSpacePressed ? 'pressed' : ''}`}
+                          style={{ touchAction: 'none' }}
                       >
                           <span className="font-pixel text-white/90 text-3xl tracking-widest opacity-80 group-active:translate-y-1">TAP</span>
                       </button>
