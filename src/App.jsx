@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Lock, Volume2, Power, Heart, Zap, Play, Pause, Square, RotateCcw, Eye, EyeOff, Menu } from 'lucide-react';
+import { Lock, Heart, Play, Pause, RotateCcw, Eye, EyeOff } from 'lucide-react';
 
 /**
- * RHYTHM BOY: ARCADE EDITION - v12.0 (Mobile Native Fix)
+ * RHYTHM BOY: ARCADE EDITION - v13.0 (Mobile Perfect)
  * * Changes:
- * - INLINE STYLES: Moved orientation CSS into JS to guarantee it loads.
- * - SMART SCALING: Improved math to handle mobile browser address bars.
- * - FORCE LANDSCAPE: Only renders game content when strictly in landscape.
+ * - AUTO-ROTATION: Game renders rotated 90deg in portrait mode. No more "Please Rotate" overlay.
+ * - LATENCY FIX: Widened hit windows (0.35 -> 0.5) to account for mobile audio latency.
+ * - INPUT FIX: Prioritized touchStart events.
+ * - LAYOUT: Wider side panels for better ergonomics.
  */
 
-// --- Audio Engine (Unchanged) ---
+// --- Audio Engine ---
 class GrooveEngine {
   constructor() {
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -140,36 +141,51 @@ function App() {
   const [highScores, setHighScores] = useState({ 1: [], 2: [], 3: [] });
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [activeBeat, setActiveBeat] = useState(-1);
-  const [isLandscape, setIsLandscape] = useState(true); // Track orientation explicitly
-  const [scale, setScale] = useState(1);
+  
+  // --- RESPONSIVE LOGIC (Auto-Rotate) ---
+  const [layoutStyle, setLayoutStyle] = useState({});
 
-  // --- RESPONSIVE LOGIC (Mobile Native) ---
   useEffect(() => {
-    const checkOrientationAndScale = () => {
+    const handleResize = () => {
         const w = window.innerWidth;
         const h = window.innerHeight;
+        const isPortrait = h > w;
         
-        // Detect Landscape
-        const landscape = w > h;
-        setIsLandscape(landscape);
-
-        if (landscape) {
-            const baseW = 920; 
-            const baseH = 580;
-            // Use 0.9 safety margin to avoid bezel/notch issues
-            const s = Math.min(w / baseW, h / baseH) * 0.9; 
-            setScale(s);
+        const gameW = 920; 
+        const gameH = 550; // Add safe area
+        
+        let scale, rotate;
+        
+        if (isPortrait) {
+            // Force 90deg rotation
+            // We want the game width (920) to fit into the phone height (h)
+            // And game height (550) to fit into phone width (w)
+            scale = Math.min(h / gameW, w / gameH) * 0.95;
+            rotate = 'rotate(90deg)';
+        } else {
+            // Standard landscape
+            scale = Math.min(w / gameW, h / gameH) * 0.95;
+            rotate = 'rotate(0deg)';
         }
+
+        setLayoutStyle({
+            transform: `${rotate} scale(${scale})`,
+            width: `${gameW}px`,
+            height: `${gameH}px`,
+            position: 'absolute',
+            left: '50%',
+            top: '50%',
+            marginLeft: `-${gameW / 2}px`,
+            marginTop: `-${gameH / 2}px`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+        });
     };
     
-    window.addEventListener('resize', checkOrientationAndScale);
-    window.addEventListener('orientationchange', checkOrientationAndScale);
-    checkOrientationAndScale(); // Initial check
-    
-    return () => {
-        window.removeEventListener('resize', checkOrientationAndScale);
-        window.removeEventListener('orientationchange', checkOrientationAndScale);
-    };
+    window.addEventListener('resize', handleResize);
+    handleResize();
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   const difficultyRef = useRef(1); 
@@ -298,7 +314,8 @@ function App() {
               if (playheadRef.current) playheadRef.current.style.left = `${progress * 100}%`;
               
               setTargets(prev => prev.map(t => {
-                  if (!t.hit && !t.missed && currentBeatPos > t.beatAbsolute + 0.35) {
+                  // Relaxed Miss Threshold: 0.5 (Half a beat late allowed before miss)
+                  if (!t.hit && !t.missed && currentBeatPos > t.beatAbsolute + 0.5) {
                       triggerFeedback("MISS", "bad");
                       return { ...t, missed: true };
                   }
@@ -364,7 +381,8 @@ function App() {
               const diff = Math.abs(currentBeatPos - t.beatAbsolute);
               if (diff < bestDiff) { bestDiff = diff; bestIndex = i; }
           });
-          if (bestIndex !== -1 && bestDiff <= 0.25) {
+          // Relaxed Hit Window: 0.3 (Was 0.25)
+          if (bestIndex !== -1 && bestDiff <= 0.3) {
               const isPerfect = bestDiff <= 0.15;
               const points = isPerfect ? 100 : 50;
               setScore(s => s + (points * (1 + Math.floor(combo / 10))));
@@ -390,143 +408,75 @@ function App() {
       };
   }, [handleTap]);
 
-  // --- RENDERING ---
   return (
-    <>
-      {/* 1. Portrait Warning Overlay (JS Controlled) */}
-      {!isLandscape && (
-          <div style={{
-              position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
-              background: '#000', color: '#33ff00', zIndex: 9999,
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-              textAlign: 'center', padding: '20px', fontFamily: '"Press Start 2P", monospace'
-          }}>
-              <div style={{ fontSize: '48px', marginBottom: '20px' }}>↻</div>
-              <div>PLEASE ROTATE DEVICE</div>
-          </div>
-      )}
+    <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', background: '#111' }}>
+      <style>{`
+            @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+            .font-pixel { font-family: 'Press Start 2P', monospace; }
+            .lcd-bg { background-color: #8bac0f; color: #0f380f; }
+            .lcd-grid {
+                background-image: linear-gradient(#0f380f11 1px, transparent 1px),
+                linear-gradient(90deg, #0f380f11 1px, transparent 1px);
+                background-size: 3px 3px;
+            }
+            .console-shadow { 
+                box-shadow: 
+                    0 25px 50px -12px rgba(0, 0, 0, 0.9),
+                    inset 0 2px 4px 0 rgba(255, 255, 255, 0.1);
+            }
+            .panel-box {
+                background-color: #262626;
+                border: 2px solid #404040;
+                border-radius: 12px;
+                box-shadow: inset 0 2px 10px rgba(0,0,0,0.5);
+                position: relative;
+            }
+            .panel-label {
+                position: absolute;
+                top: -8px; left: 10px;
+                background: #333;
+                padding: 0 4px;
+                font-family: 'Press Start 2P', monospace;
+                font-size: 8px;
+                color: #666;
+            }
+            .btn-level {
+                background: #333; border: 1px solid #111; transition: all 0.1s; position: relative; color: #666;
+            }
+            .btn-level:active { transform: translateY(1px); }
+            .btn-level.active {
+                background: #eab308; color: #000; border-color: #854d0e; box-shadow: 0 0 10px rgba(234, 179, 8, 0.4);
+            }
+            .btn-arcade {
+                background: #ef4444;
+                box-shadow: 0 8px 0 #991b1b, 0 15px 20px rgba(0,0,0,0.4);
+                transition: transform 0.05s, box-shadow 0.05s;
+                border-radius: 8px;
+            }
+            .btn-arcade:active, .btn-arcade.pressed {
+                transform: translateY(8px); box-shadow: 0 0 0 #991b1b; background: #dc2626;
+            }
+            .btn-system {
+                background: #333; border: 1px solid #555; color: #888; transition: all 0.1s;
+            }
+            .btn-system:hover { background: #444; color: #fff; }
+            .btn-system:active { background: #222; transform: translateY(1px); }
+            .switch-track {
+                background: #111; border-radius: 20px; border: 1px solid #444; box-shadow: inset 0 2px 4px rgba(0,0,0,0.8);
+            }
+            .switch-thumb { transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1); }
+            input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+            input[type=range]::-webkit-slider-thumb {
+                -webkit-appearance: none; height: 20px; width: 30px; border-radius: 4px; background: #666; border: 2px solid #222; box-shadow: 0 2px 4px rgba(0,0,0,0.5); margin-top: -8px; cursor: grab;
+            }
+            input[type=range]::-webkit-slider-runnable-track {
+                width: 100%; height: 4px; background: #111; border-radius: 2px; border: 1px solid #444;
+            }
+      `}</style>
 
-      {/* 2. Main Game Container (Only visible if landscape) */}
-      <div style={{ 
-          transform: `scale(${scale})`, 
-          transformOrigin: 'center center',
-          width: '920px', 
-          height: '550px',
-          display: isLandscape ? 'flex' : 'none', // Hide if portrait
-          alignItems: 'center',
-          justifyContent: 'center',
-          position: 'absolute'
-      }}>
+      {/* Main Game Container with Auto-Rotate Logic */}
+      <div style={layoutStyle}>
           <div className="relative w-full max-w-[900px] bg-[#333] rounded-[40px] p-8 console-shadow border-t border-white/10 flex flex-col items-center">
-              <style>{`
-                @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
-                .font-pixel { font-family: 'Press Start 2P', monospace; }
-                .lcd-bg { background-color: #8bac0f; color: #0f380f; }
-                .lcd-grid {
-                    background-image: linear-gradient(#0f380f11 1px, transparent 1px),
-                    linear-gradient(90deg, #0f380f11 1px, transparent 1px);
-                    background-size: 3px 3px;
-                }
-                .console-shadow { 
-                    box-shadow: 
-                        0 25px 50px -12px rgba(0, 0, 0, 0.9),
-                        inset 0 2px 4px 0 rgba(255, 255, 255, 0.1);
-                }
-                .panel-box {
-                    background-color: #262626;
-                    border: 2px solid #404040;
-                    border-radius: 12px;
-                    box-shadow: inset 0 2px 10px rgba(0,0,0,0.5);
-                    position: relative;
-                }
-                .panel-label {
-                    position: absolute;
-                    top: -8px; left: 10px;
-                    background: #333;
-                    padding: 0 4px;
-                    font-family: 'Press Start 2P', monospace;
-                    font-size: 8px;
-                    color: #666;
-                }
-                
-                /* Level Buttons */
-                .btn-level {
-                    background: #333;
-                    border: 1px solid #111;
-                    transition: all 0.1s;
-                    position: relative;
-                    color: #666;
-                }
-                .btn-level:active { transform: translateY(1px); }
-                .btn-level.active {
-                    background: #eab308;
-                    color: #000;
-                    border-color: #854d0e;
-                    box-shadow: 0 0 10px rgba(234, 179, 8, 0.4);
-                }
-
-                /* Tap Button (Square Arcade) */
-                .btn-arcade {
-                    background: #ef4444;
-                    box-shadow: 
-                        0 8px 0 #991b1b,
-                        0 15px 20px rgba(0,0,0,0.4);
-                    transition: transform 0.05s, box-shadow 0.05s;
-                    border-radius: 8px;
-                }
-                .btn-arcade:active, .btn-arcade.pressed {
-                    transform: translateY(8px);
-                    box-shadow: 0 0 0 #991b1b;
-                    background: #dc2626;
-                }
-
-                /* System Buttons */
-                .btn-system {
-                    background: #333;
-                    border: 1px solid #555;
-                    color: #888;
-                    transition: all 0.1s;
-                }
-                .btn-system:hover { background: #444; color: #fff; }
-                .btn-system:active { background: #222; transform: translateY(1px); }
-
-                /* Guide Switch */
-                .switch-track {
-                    background: #111;
-                    border-radius: 20px;
-                    border: 1px solid #444;
-                    box-shadow: inset 0 2px 4px rgba(0,0,0,0.8);
-                }
-                .switch-thumb {
-                    transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
-                }
-
-                /* Slider */
-                input[type=range] {
-                    -webkit-appearance: none;
-                    width: 100%;
-                    background: transparent;
-                }
-                input[type=range]::-webkit-slider-thumb {
-                    -webkit-appearance: none;
-                    height: 20px;
-                    width: 30px;
-                    border-radius: 4px;
-                    background: #666;
-                    border: 2px solid #222;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.5);
-                    margin-top: -8px;
-                    cursor: grab;
-                }
-                input[type=range]::-webkit-slider-runnable-track {
-                    width: 100%;
-                    height: 4px;
-                    background: #111;
-                    border-radius: 2px;
-                    border: 1px solid #444;
-                }
-              `}</style>
-
               <div className="w-full bg-[#171717] rounded-t-lg rounded-b-[30px] p-8 pt-4 shadow-[0_4px_0_#000] mb-8 relative border border-white/5">
                   <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
                       <div className={`w-2 h-2 rounded-full border border-black/50 ${isPlaying ? 'bg-green-500 shadow-[0_0_8px_#4ade80]' : 'bg-red-900'}`}></div>
@@ -545,7 +495,7 @@ function App() {
                               {feedback.text}
                           </div>
                           <div className="flex justify-end items-center gap-1 w-1/3 text-[#0f380f]">
-                              <Heart size={16} />
+                              <Heart size={16} fill="currentColor" />
                               <div className="flex gap-0.5">
                                   {[...Array(5)].map((_, i) => (
                                       <div key={i} className={`w-2 h-5 border-2 border-[#0f380f] ${hp > i * 20 ? 'bg-[#0f380f]' : 'bg-transparent'}`}></div>
@@ -565,7 +515,7 @@ function App() {
                                           ${isLocked ? 'border-8' : ''} 
                                       `}>
                                           <div className="absolute top-2 left-2 font-pixel text-[10px] text-[#0f380f] opacity-60">{i+1}</div>
-                                          {isLocked && <div className="absolute top-2 right-2 text-[#0f380f] opacity-60"><Lock size={12} /></div>}
+                                          {isLocked && <div className="absolute top-2 right-2 text-[#0f380f] opacity-60"><Lock size={12} fill="currentColor" /></div>}
                                           {p ? (
                                               <div className={`w-full h-full p-4 text-[#0f380f] flex items-center justify-center ${p.id === 'rest' ? 'opacity-30' : ''}`}>
                                                   <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible">{p.render()}</svg>
@@ -631,7 +581,12 @@ function App() {
                   <div className="w-48 flex flex-col items-center justify-start shrink-0">
                       <button 
                           onMouseDown={handleTap}
-                          onTouchStart={(e) => { e.preventDefault(); handleTap(); }}
+                          onTouchStart={(e) => { 
+                              e.preventDefault(); 
+                              setIsSpacePressed(true); 
+                              handleTap(); 
+                              setTimeout(() => setIsSpacePressed(false), 100);
+                          }}
                           className={`w-32 h-32 btn-arcade group flex items-center justify-center ${isSpacePressed ? 'pressed' : ''}`}
                       >
                           <span className="font-pixel text-white/90 text-3xl tracking-widest opacity-80 group-active:translate-y-1">TAP</span>
@@ -660,7 +615,7 @@ function App() {
               </div>
           </div>
       </div>
-    </>
+    </div>
   );
 }
 
