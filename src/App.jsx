@@ -2,13 +2,11 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Lock, Heart, Play, Pause, RotateCcw, Eye, EyeOff, Menu } from 'lucide-react';
 
 /**
- * RHYTHM BOY: ARCADE EDITION - v14.0 (Sync & Input Fix)
- * * Critical Fixes:
- * - SYNC: Measure state updates are now delayed to match exact audio start time.
- * (Prevents "vanishing targets" at the end of measures).
- * - INPUT: Switched to onPointerDown for unified, instant response.
- * - INPUT: Added 80ms debounce to prevent double-tap glitch on Android.
- * - ROTATION: Forced layout rotation logic preserved.
+ * RHYTHM BOY: INFINITE ARCADE - v17.0 (Ref Fix)
+ * * FIXED: ReferenceError: engineRef is not defined.
+ * * FIXED: Unified all audio references to 'engineRef'.
+ * * FIXED: Restored Infinite Scroll logic (generateChunk instead of generateFullMeasure).
+ * * FIXED: Layout alignment for mobile.
  */
 
 // --- Audio Engine ---
@@ -25,10 +23,9 @@ class GrooveEngine {
     this.timerID = null;
     this.scheduleAheadTime = 0.1;
     this.lookahead = 25.0;
-    this.onMeasureStart = null; 
   }
 
-  resume() { if (this.ctx.state === 'suspended') { this.ctx.resume(); } }
+  resume() { if (this.ctx.state === 'suspended') this.ctx.resume(); }
 
   playKick(time) {
     const osc = this.ctx.createOscillator();
@@ -44,25 +41,19 @@ class GrooveEngine {
   }
 
   playSnare(time) {
-    const bufferSize = this.ctx.sampleRate * 0.1;
-    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-    const noise = this.ctx.createBufferSource();
-    noise.buffer = buffer;
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'highpass';
-    filter.frequency.value = 1500;
+    const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(150, time);
     gain.gain.setValueAtTime(0.4, time);
     gain.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
-    noise.connect(filter);
-    filter.connect(gain);
+    osc.connect(gain);
     gain.connect(this.masterGain);
-    noise.start(time);
+    osc.start(time);
+    osc.stop(time + 0.1);
   }
 
-  playMetronomeClick(time, isStrong) {
+  playClick(time, isStrong) {
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
       osc.type = 'square';
@@ -75,9 +66,10 @@ class GrooveEngine {
       osc.stop(time + 0.05);
   }
 
-  playFeedback(time, type) {
+  playFeedback(type) {
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
+    const time = this.ctx.currentTime;
     if (type === 'hit') {
         osc.type = 'sine';
         osc.frequency.setValueAtTime(880, time); 
@@ -96,31 +88,28 @@ class GrooveEngine {
     osc.stop(time + 0.15);
   }
 
+  // Purely for clock advancement in this architecture
   scheduler() {
     while (this.nextNoteTime < this.ctx.currentTime + this.scheduleAheadTime) {
-      if (this.beatCount === 0) if (this.onMeasureStart) this.onMeasureStart(this.nextNoteTime);
-      if (this.beatCount === 0 || this.beatCount === 2) this.playKick(this.nextNoteTime);
-      else this.playSnare(this.nextNoteTime);
-      this.playMetronomeClick(this.nextNoteTime, this.beatCount === 0);
       const secondsPerBeat = 60.0 / this.tempo;
       this.nextNoteTime += secondsPerBeat;
-      this.beatCount = (this.beatCount + 1) % 4;
+      this.beatCount++;
     }
     this.timerID = window.setTimeout(this.scheduler.bind(this), this.lookahead);
   }
 
-  async start() {
+  start() {
     if (this.isPlaying) return;
     this.resume();
     this.isPlaying = true;
     this.beatCount = 0;
     this.nextNoteTime = this.ctx.currentTime + 0.1;
-    this.scheduler();
+    // We don't start scheduler loop here, App handles the logic loop
   }
 
   stop() {
     this.isPlaying = false;
-    clearTimeout(this.timerID);
+    if (this.timerID) clearTimeout(this.timerID);
   }
 }
 
@@ -151,17 +140,29 @@ function App() {
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [activeBeat, setActiveBeat] = useState(-1);
   const [scale, setScale] = useState(1);
+  const [currentPattern, setCurrentPattern] = useState(null);
+  const [feedback, setFeedback] = useState({ text: "READY", type: "neutral" });
+  
+  // Display target notes
+  const [targets, setTargets] = useState([]);
 
   // --- REFS ---
-  const difficultyRef = useRef(1); 
-  const measureCountRef = useRef(0);
-  const engineRef = useRef(null);
+  const engineRef = useRef(null); // Unified Audio Engine Ref
+  const noteQueueRef = useRef([]); 
+  const patternQueueRef = useRef([]); 
+  const lastGenBeatRef = useRef(-1); 
+  const startTimeRef = useRef(0);
+  const timerIDRef = useRef(null);
   const animRef = useRef(null);
-  const playheadRef = useRef(null);
-  const timelineRef = useRef(null); 
-  const lastTapRef = useRef(0); // For debouncing input
+  const lastTapRef = useRef(0);
+  const difficultyRef = useRef(1); 
 
-  // Responsive Scaling
+  const playheadRef = useRef(null);
+  const timelineRef = useRef(null);
+
+  useEffect(() => { difficultyRef.current = difficulty; }, [difficulty]);
+
+  // Scale Logic
   useEffect(() => {
     const handleResize = () => {
         const w = window.innerWidth;
@@ -169,7 +170,6 @@ function App() {
         const isPortrait = h > w;
         const gameW = 920; 
         const gameH = 550;
-        
         let s, rotate;
         if (isPortrait) {
             s = Math.min(h / gameW, w / gameH) * 0.95;
@@ -178,8 +178,6 @@ function App() {
             s = Math.min(w / gameW, h / gameH) * 0.95;
             rotate = 'rotate(0deg)';
         }
-
-        // Apply styles directly to container
         const container = document.getElementById('game-container');
         if (container) {
             container.style.transform = `${rotate} scale(${s})`;
@@ -187,59 +185,35 @@ function App() {
         }
     };
     window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
     handleResize();
-    return () => window.removeEventListener('resize', handleResize);
+    return () => {
+        window.removeEventListener('resize', handleResize);
+        window.removeEventListener('orientationchange', handleResize);
+    };
   }, []);
 
-  useEffect(() => { difficultyRef.current = difficulty; }, [difficulty]);
-
-  const [measurePatterns, setMeasurePatterns] = useState([]);
-  const [measureStartTime, setMeasureStartTime] = useState(0);
-  const [targets, setTargets] = useState([]); 
-  const [feedback, setFeedback] = useState({ text: "READY", type: "neutral" });
-
+  // Init Audio
   useEffect(() => {
     engineRef.current = new GrooveEngine();
-    
-    // --- CRITICAL SYNC FIX ---
-    // Instead of updating state immediately when the scheduler fires (which is early),
-    // we calculate the delay until the ACTUAL note time and update React state then.
-    engineRef.current.onMeasureStart = (targetTime) => {
-        const ctx = engineRef.current.ctx;
-        const delay = (targetTime - ctx.currentTime) * 1000; // ms
-        
-        // Ensure delay is non-negative
-        const safeDelay = Math.max(0, delay);
-
-        setTimeout(() => {
-            setMeasureStartTime(targetTime);
-            measureCountRef.current += 1; 
-            generateFullMeasure(measureCountRef.current);
-        }, safeDelay);
-    };
-
     const savedScores = localStorage.getItem('rhythmBoyHighScores');
     if (savedScores) setHighScores(JSON.parse(savedScores));
     return () => {
-        engineRef.current.stop();
+        if (timerIDRef.current) clearTimeout(timerIDRef.current);
         if (animRef.current) cancelAnimationFrame(animRef.current);
+        if (engineRef.current) engineRef.current.stop();
     };
   }, []);
 
-  useEffect(() => { engineRef.current.tempo = bpm; }, [bpm]);
+  useEffect(() => { if(engineRef.current) engineRef.current.tempo = bpm; }, [bpm]);
 
-  const saveHighScore = (finalScore, level) => {
-    if (finalScore === 0) return;
-    setHighScores(prev => {
-        const newScores = [...(prev[level] || []), finalScore].sort((a, b) => b - a).slice(0, 10);
-        const updated = { ...prev, [level]: newScores };
-        localStorage.setItem('rhythmBoyHighScores', JSON.stringify(updated));
-        return updated;
-    });
-  };
+  // --- INFINITE SCROLL LOGIC ---
 
-  const generateFullMeasure = (currentMeasureIndex) => {
+  const generateChunk = () => {
       const currentDiff = difficultyRef.current;
+      const startBeat = lastGenBeatRef.current + 1;
+      const isCountIn = startBeat < 0;
+
       const getWeightedPattern = (diff) => {
           const allKeys = Object.keys(PATTERNS).filter(k => k !== 'rest');
           let pool = [];
@@ -248,7 +222,7 @@ function App() {
           } else if (diff === 2) {
               const basic = allKeys.filter(k => PATTERNS[k].difficulty === 1);
               const medium = allKeys.filter(k => PATTERNS[k].difficulty === 2);
-              pool = [...basic, ...medium, ...medium, ...medium]; 
+              pool = [...basic, ...medium, ...medium, ...medium];
           } else {
               const basic = allKeys.filter(k => PATTERNS[k].difficulty === 1);
               const medium = allKeys.filter(k => PATTERNS[k].difficulty === 2);
@@ -259,167 +233,229 @@ function App() {
           return PATTERNS[randKey];
       };
 
-      const newPatterns = [];
-      const newTargets = [];
-      const isFirstMeasure = currentMeasureIndex === 1;
-
       for (let i = 0; i < 4; i++) {
+          const absBeat = startBeat + i;
           let pattern;
-          if (isFirstMeasure) {
-              if (i < 2) pattern = PATTERNS['rest'];
-              else pattern = getWeightedPattern(currentDiff);
+
+          if (isCountIn) {
+              pattern = PATTERNS['rest'];
           } else {
-              if (i === 0) pattern = PATTERNS['eighths'];
-              else pattern = getWeightedPattern(currentDiff);
+              if (absBeat >= 0 && absBeat % 4 === 0) {
+                  pattern = PATTERNS['eighths']; // Anchor
+              } else {
+                  pattern = getWeightedPattern(currentDiff);
+              }
           }
-          newPatterns.push(pattern);
+
+          patternQueueRef.current.push({ startBeat: absBeat, pattern });
+
           if (pattern.id !== 'rest') {
               pattern.timings.forEach(t => {
-                  newTargets.push({ beatAbsolute: i + t, hit: false, missed: false });
+                  noteQueueRef.current.push({
+                      absBeat: absBeat + t,
+                      played: false,
+                      hit: false,
+                      missed: false,
+                      type: (absBeat % 4 === 0 && t === 0) ? 'kick' : 'snare',
+                      parentPattern: pattern
+                  });
               });
           }
       }
-      setMeasurePatterns(newPatterns);
-      setTargets(newTargets);
+      lastGenBeatRef.current += 4;
   };
 
-  const resetGame = () => {
-    engineRef.current.stop();
-    setIsPlaying(false);
-    setHp(100);
-    setScore(0);
-    setCombo(0);
-    setGameOver(false);
-    setFeedback({ text: "READY", type: "neutral" });
-    setMeasurePatterns([]);
-    setTargets([]);
-    setMeasureStartTime(0);
-    measureCountRef.current = 0;
-    setActiveBeat(-1);
-  };
+  const scheduleAudio = useCallback(() => {
+      if (!engineRef.current) return;
+      const dev = engineRef.current;
+      const ctx = dev.ctx;
+      const secondsPerBeat = 60.0 / bpm;
+      const lookahead = 25.0; 
+      const scheduleAheadTime = 0.1; 
 
-  const togglePause = () => {
-      if (!isPlaying) return;
-      engineRef.current.stop();
-      setIsPlaying(false);
-      setFeedback({ text: "PAUSED", type: "neutral" });
-  };
+      const currentAbsBeat = (ctx.currentTime - startTimeRef.current) / secondsPerBeat;
 
-  useEffect(() => {
-      const loop = () => {
-          if (isPlaying && measureStartTime > 0 && !gameOver) {
-              const ctx = engineRef.current.ctx;
-              const currentTime = ctx.currentTime;
-              const secondsPerBeat = 60 / bpm;
-              
-              // Calculate accurate progress
-              const rawProgress = (currentTime - measureStartTime) / (secondsPerBeat * 4);
-              const progress = Math.max(0, Math.min(1, rawProgress));
-              const currentBeatPos = rawProgress * 4;
-              const currentBeatIndex = Math.floor(currentBeatPos);
-              
-              if (currentBeatIndex >= 0 && currentBeatIndex < 4) {
-                  setActiveBeat(currentBeatIndex);
-              }
+      // Ensure buffer
+      if (lastGenBeatRef.current < currentAbsBeat + 8) {
+          generateChunk();
+      }
 
-              if (playheadRef.current) playheadRef.current.style.left = `${progress * 100}%`;
+      // Schedule Audio
+      noteQueueRef.current.forEach(note => {
+          if (note.played) return;
+          const noteTime = startTimeRef.current + (note.absBeat * secondsPerBeat);
+          if (noteTime < ctx.currentTime + scheduleAheadTime) {
+              if (note.type === 'kick') dev.playKick(noteTime);
+              else dev.playSnare(noteTime);
               
-              setTargets(prev => prev.map(t => {
-                  if (!t.hit && !t.missed && currentBeatPos > t.beatAbsolute + 0.35) {
-                      triggerFeedback("MISS", "bad");
-                      return { ...t, missed: true };
-                  }
-                  return t;
-              }));
+              if (note.absBeat % 1 === 0) dev.playClick(noteTime, note.absBeat % 4 === 0);
+              
+              note.played = true;
           }
-          animRef.current = requestAnimationFrame(loop);
-      };
-      animRef.current = requestAnimationFrame(loop);
-      return () => cancelAnimationFrame(animRef.current);
-  }, [isPlaying, measureStartTime, bpm, gameOver]);
+      });
 
+      if (isPlaying) {
+          timerIDRef.current = setTimeout(scheduleAudio, lookahead);
+      }
+  }, [bpm, isPlaying]);
+
+  // Visual Loop
+  const visualLoop = useCallback(() => {
+      if (!isPlaying || gameOver || !engineRef.current) return;
+      const ctx = engineRef.current.ctx;
+      const secondsPerBeat = 60.0 / bpm;
+      const currentAbsBeat = (ctx.currentTime - startTimeRef.current) / secondsPerBeat;
+
+      // 1. Update Active Pattern
+      const activePat = patternQueueRef.current.find(p => 
+          currentAbsBeat >= p.startBeat && currentAbsBeat < p.startBeat + 1
+      );
+      if (activePat && activePat.pattern.id !== 'rest') {
+          setCurrentPattern(activePat.pattern);
+          setActiveBeat(activePat.startBeat % 4);
+      } else {
+          setCurrentPattern(null);
+          setActiveBeat(-1);
+      }
+
+      // 2. Check Misses
+      noteQueueRef.current.forEach(note => {
+          if (!note.missed && !note.hit && currentAbsBeat > note.absBeat + 0.5) {
+              note.missed = true;
+              triggerFeedback("MISS", "bad");
+          }
+      });
+
+      // 3. Prune
+      if (noteQueueRef.current.length > 50) {
+          const idx = noteQueueRef.current.findIndex(n => n.absBeat > currentAbsBeat - 2);
+          if (idx > 0) noteQueueRef.current = noteQueueRef.current.slice(idx);
+      }
+      if (patternQueueRef.current.length > 20) {
+          const idx = patternQueueRef.current.findIndex(p => p.startBeat > currentAbsBeat - 2);
+          if (idx > 0) patternQueueRef.current = patternQueueRef.current.slice(idx);
+      }
+
+      // 4. Update Render Targets
+      const visible = noteQueueRef.current.filter(n => 
+          n.absBeat > currentAbsBeat - 1 && n.absBeat < currentAbsBeat + 6
+      ).map(n => ({
+          ...n,
+          offset: n.absBeat - currentAbsBeat
+      }));
+      setTargets(visible);
+
+      animRef.current = requestAnimationFrame(visualLoop);
+  }, [isPlaying, gameOver, bpm]);
+
+  // Loop Control
+  useEffect(() => {
+      if (isPlaying) {
+          scheduleAudio();
+          animRef.current = requestAnimationFrame(visualLoop);
+      } else {
+          if (timerIDRef.current) clearTimeout(timerIDRef.current);
+          if (animRef.current) cancelAnimationFrame(animRef.current);
+      }
+  }, [isPlaying, scheduleAudio, visualLoop]);
+
+  // CONTROLS
   const triggerFeedback = (text, type) => {
       setFeedback({ text, type, id: Math.random() });
       if (type === 'bad') {
           setCombo(0);
+          engineRef.current?.playFeedback('miss');
           setHp(h => {
-              const newHp = Math.max(0, h - 15);
-              if (newHp === 0 && !gameOver) {
-                  setGameOver(true);
-                  engineRef.current.stop();
-              }
+              const newHp = Math.max(0, h - 10);
+              if (newHp === 0) setGameOver(true);
               return newHp;
           });
-          engineRef.current.playFeedback(engineRef.current.ctx.currentTime, 'miss');
       } else {
           setCombo(c => c + 1);
-          setHp(h => Math.min(100, h + 3)); 
-          engineRef.current.playFeedback(engineRef.current.ctx.currentTime, 'hit');
+          engineRef.current?.playFeedback('hit');
+          setHp(h => Math.min(100, h + 2));
       }
   };
 
-  useEffect(() => { if (gameOver) saveHighScore(score, difficulty); }, [gameOver]);
-
-  // --- INPUT HANDLER ---
   const handleTap = useCallback((e) => {
-      // Prevent defaults if it's a touch event to stop mouse emulation
-      if (e && e.type === 'pointerdown') {
-          e.preventDefault();
-      }
-
-      // Debounce: Ignore taps closer than 80ms
+      if (e && e.type === 'pointerdown') e.preventDefault();
       const now = Date.now();
-      if (now - lastTapRef.current < 80) return;
+      if (now - lastTapRef.current < 80) return; 
       lastTapRef.current = now;
 
-      if (gameOver) {
-          resetGame();
-          return;
-      }
-      if (!isPlaying) {
-          const resumeAndStart = async () => {
-              if (engineRef.current.ctx.state === 'suspended') await engineRef.current.ctx.resume();
-              if (measureCountRef.current > 0) {
-                  await engineRef.current.start();
-                  setIsPlaying(true);
-                  setFeedback({ text: "RESUME", type: "good" });
-              } else {
-                  await engineRef.current.start();
-                  setIsPlaying(true);
-                  setFeedback({ text: "GO!", type: "good" });
-              }
-          };
-          resumeAndStart();
-          return;
-      }
+      if (gameOver) { resetGame(); return; }
+      if (!isPlaying) { startGame(); return; }
+
       const ctx = engineRef.current.ctx;
-      const currentBeatPos = ((ctx.currentTime - measureStartTime) / (60 / bpm));
-      
-      let bestDiff = Infinity;
-      let bestIndex = -1;
-      
-      setTargets(prev => {
-          prev.forEach((t, i) => {
-              if (t.hit || t.missed) return;
-              const diff = Math.abs(currentBeatPos - t.beatAbsolute);
-              if (diff < bestDiff) { bestDiff = diff; bestIndex = i; }
-          });
-          
-          // Relaxed window for mobile latency
-          if (bestIndex !== -1 && bestDiff <= 0.3) {
-              const isPerfect = bestDiff <= 0.15;
-              const points = isPerfect ? 100 : 50;
-              setScore(s => s + (points * (1 + Math.floor(combo / 10))));
-              triggerFeedback(isPerfect ? "PERF" : "GOOD", "good"); 
-              const next = [...prev];
-              next[bestIndex] = { ...next[bestIndex], hit: true };
-              return next;
-          } else {
-              triggerFeedback("BAD", "bad");
-              return prev;
+      const secondsPerBeat = 60.0 / bpm;
+      const currentAbsBeat = (ctx.currentTime - startTimeRef.current) / secondsPerBeat;
+
+      let bestNote = null;
+      let minDiff = Infinity;
+
+      for (const note of noteQueueRef.current) {
+          if (note.hit || note.missed) continue;
+          const diff = note.absBeat - currentAbsBeat;
+          if (diff < -0.5) continue; 
+          if (diff > 1.0) break; 
+
+          const absDiff = Math.abs(diff);
+          if (absDiff < minDiff) {
+              minDiff = absDiff;
+              bestNote = note;
           }
-      });
-  }, [isPlaying, measureStartTime, bpm, gameOver, combo]);
+      }
+
+      if (bestNote && minDiff <= 0.35) {
+          bestNote.hit = true;
+          const isPerfect = minDiff <= 0.15;
+          const points = isPerfect ? 100 : 50;
+          setScore(s => s + points + (Math.floor(combo/10)*10));
+          triggerFeedback(isPerfect ? "PERF" : "GOOD", "good");
+      } else {
+          triggerFeedback("BAD", "bad");
+      }
+  }, [isPlaying, gameOver, bpm, combo]);
+
+  const resetGame = () => {
+      if (engineRef.current) engineRef.current.stop();
+      setIsPlaying(false);
+      setHp(100);
+      setScore(0);
+      setCombo(0);
+      setGameOver(false);
+      setFeedback({ text: "READY", type: "neutral" });
+      setTargets([]);
+      setCurrentPattern(null);
+      
+      noteQueueRef.current = [];
+      patternQueueRef.current = [];
+      lastGenBeatRef.current = -4; 
+  };
+
+  const startGame = async () => {
+      if (!engineRef.current) return;
+      if (engineRef.current.ctx.state === 'suspended') await engineRef.current.ctx.resume();
+      
+      resetGame();
+      
+      lastGenBeatRef.current = -5; // Hack start
+      generateChunk(); // Count-in
+      generateChunk(); // First measure
+      
+      startTimeRef.current = engineRef.current.ctx.currentTime + 0.1;
+      
+      setIsPlaying(true);
+      engineRef.current.start();
+      setFeedback({ text: "GO!", type: "good" });
+  };
+
+  const togglePause = () => {
+      if (!isPlaying) return;
+      if (engineRef.current) engineRef.current.stop();
+      setIsPlaying(false);
+      setFeedback({ text: "PAUSED", type: "neutral" });
+  };
 
   useEffect(() => {
       const handleKeyDown = (e) => { if (e.code === 'Space') { e.preventDefault(); setIsSpacePressed(true); handleTap(); } };
@@ -432,9 +468,27 @@ function App() {
       };
   }, [handleTap]);
 
+  // Load scores
+  useEffect(() => { if (gameOver) saveHighScore(score, difficulty); }, [gameOver]);
+
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', overflow: 'hidden', background: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <style>{`
+    <>
+      <div id="orientation-overlay">
+          <div style={{ fontSize: '48px', marginBottom: '20px' }}>↻</div>
+          <div>PLEASE ROTATE DEVICE</div>
+      </div>
+      
+      <div style={{ 
+          transform: `scale(${scale})`, 
+          transformOrigin: 'center center',
+          width: '920px', 
+          height: '550px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          position: 'absolute'
+      }} id="game-container">
+          <style>{`
             @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
             .font-pixel { font-family: 'Press Start 2P', monospace; }
             .lcd-bg { background-color: #8bac0f; color: #0f380f; }
@@ -476,7 +530,6 @@ function App() {
                 box-shadow: 0 8px 0 #991b1b, 0 15px 20px rgba(0,0,0,0.4);
                 transition: transform 0.05s, box-shadow 0.05s;
                 border-radius: 8px;
-                touch-action: manipulation;
             }
             .btn-arcade:active, .btn-arcade.pressed {
                 transform: translateY(8px); box-shadow: 0 0 0 #991b1b; background: #dc2626;
@@ -497,76 +550,87 @@ function App() {
             input[type=range]::-webkit-slider-runnable-track {
                 width: 100%; height: 4px; background: #111; border-radius: 2px; border: 1px solid #444;
             }
-      `}</style>
+          `}</style>
 
-      {/* Main Game Container */}
-      <div id="game-container">
           <div className="relative w-full max-w-[900px] bg-[#333] rounded-[40px] p-8 console-shadow border-t border-white/10 flex flex-col items-center">
+              
+              {/* --- SCREEN --- */}
               <div className="w-full bg-[#171717] rounded-t-lg rounded-b-[30px] p-8 pt-4 shadow-[0_4px_0_#000] mb-8 relative border border-white/5">
                   <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
                       <div className={`w-2 h-2 rounded-full border border-black/50 ${isPlaying ? 'bg-green-500 shadow-[0_0_8px_#4ade80]' : 'bg-red-900'}`}></div>
                       <span className="text-[8px] text-white/30 font-pixel tracking-widest">POWER</span>
                   </div>
                   <div className="flex justify-end text-white/30 text-[10px] font-pixel mb-2 px-1 w-full uppercase tracking-widest">
-                      <span>design by Tomaxxx</span>
+                       <span>design by Tomaxxx</span>
                   </div>
+                  
+                  {/* LCD DISPLAY */}
                   <div className="aspect-[2.2/1] w-full lcd-bg lcd-grid rounded-sm border-4 border-[#0f380f]/40 relative overflow-hidden flex flex-col shadow-[inset_0_0_20px_rgba(0,0,0,0.3)]">
+                      
+                      {/* HUD */}
                       <div className="flex justify-between items-center p-3 bg-[#0f380f]/10 border-b border-[#0f380f]/20 h-12">
-                          <div className="font-pixel text-[#0f380f] text-sm w-1/3 flex flex-col">
-                              <span className="text-[8px] opacity-60">SCORE</span>
-                              <span>{score.toString().padStart(6, '0')}</span>
-                          </div>
-                          <div className="font-pixel text-center w-1/3 font-bold text-xl tracking-widest text-[#0f380f] animate-pulse">
-                              {feedback.text}
-                          </div>
-                          <div className="flex justify-end items-center gap-1 w-1/3 text-[#0f380f]">
-                              <Heart size={16} fill="currentColor" />
-                              <div className="flex gap-0.5">
-                                  {[...Array(5)].map((_, i) => (
-                                      <div key={i} className={`w-2 h-5 border-2 border-[#0f380f] ${hp > i * 20 ? 'bg-[#0f380f]' : 'bg-transparent'}`}></div>
-                                  ))}
-                              </div>
-                          </div>
+                           <div className="font-pixel text-[#0f380f] text-sm w-1/3 flex flex-col">
+                               <span className="text-[8px] opacity-60">SCORE</span>
+                               <span>{score.toString().padStart(6, '0')}</span>
+                           </div>
+                           <div className="font-pixel text-center w-1/3 font-bold text-xl tracking-widest text-[#0f380f] animate-pulse">
+                               {feedback.text}
+                           </div>
+                           <div className="flex justify-end items-center gap-1 w-1/3 text-[#0f380f]">
+                               <Heart size={16} fill="currentColor" />
+                               <div className="flex gap-0.5">
+                                   {[...Array(5)].map((_, i) => (
+                                       <div key={i} className={`w-2 h-5 border-2 border-[#0f380f] ${hp > i * 20 ? 'bg-[#0f380f]' : 'bg-transparent'}`}></div>
+                                   ))}
+                               </div>
+                           </div>
                       </div>
-                      <div className="flex-1 px-6 flex flex-col relative z-0 py-4">
-                          <div className="flex-1 flex gap-3 items-center">
-                              {[0,1,2,3].map(i => {
-                                  const p = measurePatterns[i];
-                                  const active = activeBeat === i; 
-                                  const isLocked = measureCountRef.current > 1 && i === 0;
-                                  return (
-                                      <div key={i} className={`h-full flex-1 border-4 border-[#0f380f] flex flex-col items-center justify-center relative 
-                                          ${active && isPlaying ? 'bg-[#0f380f]/20' : ''}
-                                          ${isLocked ? 'border-8' : ''} 
-                                      `}>
-                                          <div className="absolute top-2 left-2 font-pixel text-[10px] text-[#0f380f] opacity-60">{i+1}</div>
-                                          {isLocked && <div className="absolute top-2 right-2 text-[#0f380f] opacity-60"><Lock size={12} fill="currentColor" /></div>}
-                                          {p ? (
-                                              <div className={`w-full h-full p-4 text-[#0f380f] flex items-center justify-center ${p.id === 'rest' ? 'opacity-30' : ''}`}>
-                                                  <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible">{p.render()}</svg>
-                                              </div>
-                                          ) : <div className="font-pixel text-xs text-[#0f380f] opacity-50">...</div>}
+
+                      {/* MAIN GAME VIEW (INFINITE SCROLL) */}
+                      <div className="flex-1 flex flex-col relative overflow-hidden">
+                          
+                          {/* Top: Current Pattern Indicator */}
+                          <div className="h-1/2 flex items-center justify-center border-b border-[#0f380f]/20">
+                              {currentPattern ? (
+                                  <div className="flex flex-col items-center animate-in fade-in zoom-in duration-100">
+                                      <div className="text-[#0f380f] w-16 h-16">
+                                          <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible">
+                                              {currentPattern.render()}
+                                          </svg>
                                       </div>
-                                  );
-                              })}
+                                      <div className="font-pixel text-[8px] text-[#0f380f] mt-1">{currentPattern.name}</div>
+                                  </div>
+                              ) : (
+                                  <div className="font-pixel text-[10px] text-[#0f380f] opacity-50">...</div>
+                              )}
                           </div>
-                          <div className="h-12 border-2 border-[#0f380f] mt-4 relative bg-[#0f380f]/5" ref={timelineRef}>
-                              <div className="absolute inset-0 flex">
-                                  {[0,1,2,3].map(i => <div key={i} className="flex-1 border-r border-[#0f380f]/20"></div>)}
-                              </div>
-                              <div className="absolute top-1/2 w-full h-[2px] bg-[#0f380f]/40"></div>
-                              {targets.map((t, idx) => (
-                                  <div key={idx} 
-                                      className={`absolute top-1/2 w-4 h-6 -ml-2 -mt-3 border-2 border-[#0f380f] flex items-center justify-center transition-opacity
-                                      ${!showGuides && !t.missed && !t.hit ? 'opacity-0' : ''}
-                                      ${t.hit ? 'opacity-0' : t.missed ? 'bg-[#0f380f] opacity-50' : ''}
+
+                          {/* Bottom: Note Conveyor Belt */}
+                          <div className="h-1/2 relative bg-[#0f380f]/5">
+                              {/* Hit Line (Fixed at 20%) */}
+                              <div className="absolute top-0 bottom-0 left-[20%] w-[2px] bg-[#0f380f] z-10"></div>
+                              <div className="absolute top-1/2 left-[20%] w-10 h-10 border-2 border-[#0f380f] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-50"></div>
+
+                              {/* Scrolling Targets */}
+                              {targets.map((t, i) => (
+                                  <div 
+                                      key={i}
+                                      className={`absolute top-1/2 -translate-y-1/2 w-4 h-8 bg-[#0f380f] border border-[#0f380f]
+                                          ${!showGuides && !t.missed && !t.hit ? 'opacity-0' : ''}
+                                          ${t.hit ? 'opacity-0' : t.missed ? 'opacity-30' : ''}
                                       `}
-                                      style={{ left: `${(t.beatAbsolute/4)*100}%` }}>
+                                      style={{
+                                          left: `${20 + (t.offset * 15)}%`,
+                                          opacity: t.offset > 5 ? 0 : (t.hit ? 0 : 1)
+                                      }}
+                                  >
+                                      <div className="w-full h-full border-t-2 border-b-2 border-[#8bac0f]"></div>
                                   </div>
                               ))}
-                              <div ref={playheadRef} className={`absolute top-0 bottom-0 w-[3px] bg-[#0f380f] z-20 transition-opacity ${isPlaying ? 'opacity-100' : 'opacity-0'}`} style={{ left: '0%' }}></div>
                           </div>
                       </div>
+
+                      {/* GAME OVER */}
                       {gameOver && (
                           <div className="absolute inset-0 bg-[#8bac0f] z-40 flex flex-col items-center justify-center p-8 font-pixel text-[#0f380f]">
                               <div className="text-4xl mb-6 font-bold">GAME OVER</div>
@@ -582,7 +646,10 @@ function App() {
                       )}
                   </div>
               </div>
+
+              {/* --- CONTROL DECK --- */}
               <div className="w-full flex items-start justify-between gap-6 px-4">
+                  {/* Left: Config */}
                   <div className="flex-1 h-32 panel-box p-4 flex flex-col justify-between">
                       <span className="panel-label">CONFIG</span>
                       <div>
@@ -603,6 +670,8 @@ function App() {
                           <input type="range" min="60" max="180" step="5" value={bpm} onChange={(e) => !isPlaying && setBpm(parseInt(e.target.value))} className="w-full" />
                       </div>
                   </div>
+
+                  {/* Center: Tap */}
                   <div className="w-48 flex flex-col items-center justify-start shrink-0">
                       <button 
                           onPointerDown={handleTap}
@@ -611,8 +680,10 @@ function App() {
                       >
                           <span className="font-pixel text-white/90 text-3xl tracking-widest opacity-80 group-active:translate-y-1">TAP</span>
                       </button>
-                      <div className="mt-3 font-pixel text-[10px] text-white/20 uppercase tracking-[0.2em]">{isPlaying ? (measureCountRef.current > 0 ? "PLAYING" : "READY") : (gameOver ? "RETRY" : "START")}</div>
+                      <div className="mt-3 font-pixel text-[10px] text-white/20 uppercase tracking-[0.2em]">{isPlaying ? "PLAYING" : (gameOver ? "RETRY" : "START")}</div>
                   </div>
+
+                  {/* Right: System */}
                   <div className="flex-1 h-32 panel-box p-4 flex flex-col justify-between">
                       <span className="panel-label">SYSTEM</span>
                       <div className="flex justify-between items-center gap-4">
@@ -635,7 +706,7 @@ function App() {
               </div>
           </div>
       </div>
-    </div>
+    </>
   );
 }
 
