@@ -1,34 +1,56 @@
 @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 
-    @tailwind base;
-    @tailwind components;
-    @tailwind utilities;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-    body {
-      background-color: #111;
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
-      touch-action: none;
-      font-family: 'Press Start 2P', monospace;
-      -webkit-font-smoothing: none;
-    }
+body {
+  background-color: #111;
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* 禁止页面滚动 */
+  touch-action: none; /* 禁止双指缩放等手势 */
+  font-family: 'Press Start 2P', monospace;
+  -webkit-font-smoothing: none;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 
-    /* 强制横屏提示遮罩 */
-    #orientation-overlay {
-      position: fixed;
-      top: 0; left: 0; width: 100vw; height: 100vh;
-      background: #000;
-      color: #33ff00;
-      z-index: 9999;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      padding: 20px;
-    }
+#root {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 
-    @media (orientation: landscape) {
-      #orientation-overlay { display: none; }
-    }
+/* --- 强制横屏提示层 --- */
+#orientation-overlay {
+  position: fixed;
+  top: 0; left: 0; width: 100vw; height: 100vh;
+  background: #000;
+  color: #33ff00;
+  z-index: 9999;
+  display: flex; /* 默认显示 */
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 20px;
+}
+
+.rotate-icon {
+  font-size: 48px;
+  margin-bottom: 20px;
+  animation: spin 2s infinite linear;
+}
+
+@keyframes spin { 100% { transform: rotate(360deg); } }
+
+/* 当设备处于横屏时，隐藏提示层 */
+@media screen and (orientation: landscape) {
+  #orientation-overlay { display: none !important; }
+}
