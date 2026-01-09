@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Lock, Heart, Pause, RotateCcw, Eye, EyeOff, Menu, Play, Square } from 'lucide-react';
+import { Lock, Heart, Pause, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 
 /**
- * RHYTHM BOY: INFINITE ARCADE - v19.0 (Dual Track & Mobile Aspect Ratio)
- * * FEATURE: Split screen into Top (Visual Pattern) and Bottom (Hit Note) tracks.
- * * VISUAL: Changed hit notes to Hollow Squares.
- * * MOBILE: Adjusted base resolution (880x460) to fit wider/shorter mobile viewports better.
+ * RHYTHM BOY: INFINITE ARCADE - v20.0 (Wide Screen & Audio Guide)
+ * * RATIO: Updated to 960x480 (2:1) for modern mobile screens.
+ * * VISUAL: Added vertical Hit Line across tracks. Scaled up notes.
+ * * FEATURE: GUIDE button now toggles "Auto-Play Audio" instead of visual visibility.
+ * * FIX: Hardened Game Over screen rendering to prevent black screens.
  */
 
 // --- Audio Engine ---
@@ -116,7 +117,7 @@ const PATTERNS = {
 function App() {
   const [bpm, setBpm] = useState(85);
   const [difficulty, setDifficulty] = useState(1);
-  const [showGuides, setShowGuides] = useState(true);
+  const [guideAudio, setGuideAudio] = useState(true); // guideAudio instead of showGuides
   const [isPlaying, setIsPlaying] = useState(false);
   const [hp, setHp] = useState(100);
   const [score, setScore] = useState(0);
@@ -124,36 +125,43 @@ function App() {
   const [gameOver, setGameOver] = useState(false);
   const [highScores, setHighScores] = useState({ 1: [], 2: [], 3: [] });
   const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const [activeBeat, setActiveBeat] = useState(-1);
   const [scale, setScale] = useState(1);
+  const [currentPattern, setCurrentPattern] = useState(null);
   const [feedback, setFeedback] = useState({ text: "READY", type: "neutral" });
   
-  // New: Renderable Queues
+  // Display Queues
   const [visiblePatterns, setVisiblePatterns] = useState([]);
   const [visibleTargets, setVisibleTargets] = useState([]);
 
   // Refs
   const engineRef = useRef(null);
-  const noteQueueRef = useRef([]); // { absBeat, type, hit, missed, parentPattern }
-  const patternQueueRef = useRef([]); // { startBeat, pattern }
+  const noteQueueRef = useRef([]); 
+  const patternQueueRef = useRef([]); 
   const lastGenBeatRef = useRef(-1); 
   const startTimeRef = useRef(0);
   const timerIDRef = useRef(null);
   const animRef = useRef(null);
   const lastTapRef = useRef(0);
   const difficultyRef = useRef(1); 
+  const guideAudioRef = useRef(true); // Ref for audio loop access
+
+  const playheadRef = useRef(null);
+  const timelineRef = useRef(null); 
 
   useEffect(() => { difficultyRef.current = difficulty; }, [difficulty]);
+  useEffect(() => { guideAudioRef.current = guideAudio; }, [guideAudio]);
 
-  // Scale Logic (Optimized for Mobile)
+  // Scale Logic (Optimized for 18:9 Mobile)
   useEffect(() => {
     const handleResize = () => {
         const w = window.innerWidth;
         const h = window.innerHeight;
         const isPortrait = h > w;
         
-        // Revised base resolution for modern phones (Wider and Shorter)
-        const gameW = 880; 
-        const gameH = 460; // Reduced height to avoid bezel/notch issues
+        // Revised base resolution for wider screens (approx 2:1)
+        const gameW = 960; 
+        const gameH = 480; 
         
         let s, rotate;
         if (isPortrait) {
@@ -195,7 +203,7 @@ function App() {
 
   useEffect(() => { if(engineRef.current) engineRef.current.tempo = bpm; }, [bpm]);
 
-  // --- GAME LOGIC ---
+  // --- LOGIC ---
 
   const generateChunk = () => {
       const currentDiff = difficultyRef.current;
@@ -210,7 +218,7 @@ function App() {
           } else if (diff === 2) {
               const basic = allKeys.filter(k => PATTERNS[k].difficulty === 1);
               const medium = allKeys.filter(k => PATTERNS[k].difficulty === 2);
-              pool = [...basic, ...medium, ...medium, ...medium]; // Bias
+              pool = [...basic, ...medium, ...medium, ...medium]; 
           } else {
               const basic = allKeys.filter(k => PATTERNS[k].difficulty === 1);
               const medium = allKeys.filter(k => PATTERNS[k].difficulty === 2);
@@ -229,7 +237,7 @@ function App() {
               pattern = PATTERNS['rest'];
           } else {
               if (absBeat >= 0 && absBeat % 4 === 0) {
-                  pattern = PATTERNS['eighths']; // Anchor
+                  pattern = PATTERNS['eighths']; 
               } else {
                   pattern = getWeightedPattern(currentDiff);
               }
@@ -273,10 +281,17 @@ function App() {
           if (note.played) return;
           const noteTime = startTimeRef.current + (note.absBeat * secondsPerBeat);
           if (noteTime < ctx.currentTime + scheduleAheadTime) {
-              if (note.type === 'kick') dev.playKick(noteTime);
-              else dev.playSnare(noteTime);
               
-              if (note.absBeat % 1 === 0) dev.playClick(noteTime, note.absBeat % 4 === 0);
+              // Always play Click (Metronome) on Beat
+              if (note.absBeat % 1 === 0) {
+                  dev.playClick(noteTime, note.absBeat % 4 === 0);
+              }
+
+              // Play Guide Sounds only if Enabled
+              if (guideAudioRef.current) {
+                  if (note.type === 'kick') dev.playKick(noteTime);
+                  else dev.playSnare(noteTime);
+              }
               
               note.played = true;
           }
@@ -287,22 +302,30 @@ function App() {
       }
   }, [bpm, isPlaying]);
 
-  // Visual Loop (The Conveyor Belt)
+  // Visual Loop
   const visualLoop = useCallback(() => {
-      if (!isPlaying || gameOver || !engineRef.current) return;
+      if (!isPlaying || !engineRef.current) return; // Removed gameOver check to allow overlay render
       const ctx = engineRef.current.ctx;
       const secondsPerBeat = 60.0 / bpm;
       const currentAbsBeat = (ctx.currentTime - startTimeRef.current) / secondsPerBeat;
 
-      // 1. Prepare Visible Patterns (Upper Track)
-      // Viewport: 0 to +4 beats
-      const visiblePats = patternQueueRef.current.filter(p => 
-          p.startBeat > currentAbsBeat - 2 && p.startBeat < currentAbsBeat + 5
-      ).map(p => ({
-          ...p,
-          offset: p.startBeat - currentAbsBeat
-      }));
-      setVisiblePatterns(visiblePats);
+      // 1. Update Active Pattern
+      const activePat = patternQueueRef.current.find(p => 
+          currentAbsBeat >= p.startBeat && currentAbsBeat < p.startBeat + 1
+      );
+      if (activePat && activePat.pattern.id !== 'rest') {
+          setCurrentPattern(activePat.pattern);
+          setActiveBeat(activePat.startBeat % 4);
+      } else {
+          setCurrentPattern(null);
+          setActiveBeat(-1);
+      }
+
+      if (gameOver) {
+          // Just render current frame but don't process logic
+          animRef.current = requestAnimationFrame(visualLoop);
+          return;
+      }
 
       // 2. Check Misses
       noteQueueRef.current.forEach(note => {
@@ -322,14 +345,23 @@ function App() {
           if (idx > 0) patternQueueRef.current = patternQueueRef.current.slice(idx);
       }
 
-      // 4. Targets (Lower Track)
-      const visibleNotes = noteQueueRef.current.filter(n => 
-          n.absBeat > currentAbsBeat - 2 && n.absBeat < currentAbsBeat + 5
+      // 4. Update Targets
+      const visible = noteQueueRef.current.filter(n => 
+          n.absBeat > currentAbsBeat - 2 && n.absBeat < currentAbsBeat + 6
       ).map(n => ({
           ...n,
           offset: n.absBeat - currentAbsBeat
       }));
-      setVisibleTargets(visibleNotes);
+      setVisibleTargets(visible);
+
+      // 5. Update Patterns
+      const visiblePats = patternQueueRef.current.filter(p => 
+          p.startBeat > currentAbsBeat - 2 && p.startBeat < currentAbsBeat + 6
+      ).map(p => ({
+          ...p,
+          offset: p.startBeat - currentAbsBeat
+      }));
+      setVisiblePatterns(visiblePats);
 
       animRef.current = requestAnimationFrame(visualLoop);
   }, [isPlaying, gameOver, bpm]);
@@ -345,7 +377,6 @@ function App() {
       }
   }, [isPlaying, scheduleAudio, visualLoop]);
 
-  // CONTROLS
   const triggerFeedback = (text, type) => {
       setFeedback({ text, type, id: Math.random() });
       if (type === 'bad') {
@@ -411,10 +442,8 @@ function App() {
       setCombo(0);
       setGameOver(false);
       setFeedback({ text: "READY", type: "neutral" });
-      
       setVisiblePatterns([]);
       setVisibleTargets([]);
-      
       noteQueueRef.current = [];
       patternQueueRef.current = [];
       lastGenBeatRef.current = -4; 
@@ -424,13 +453,10 @@ function App() {
       if (!engineRef.current) return;
       if (engineRef.current.ctx.state === 'suspended') await engineRef.current.ctx.resume();
       resetGame();
-      
       lastGenBeatRef.current = -5;
       generateChunk(); 
       generateChunk(); 
-      
       startTimeRef.current = engineRef.current.ctx.currentTime + 0.1;
-      
       setIsPlaying(true);
       engineRef.current.start();
       setFeedback({ text: "GO!", type: "good" });
@@ -455,11 +481,20 @@ function App() {
   }, [handleTap]);
 
   // Load scores
-  useEffect(() => { if (gameOver) saveHighScore(score, difficulty); }, [gameOver]);
+  useEffect(() => {
+      if (gameOver && score > 0) {
+         setHighScores(prev => {
+            const newScores = [...(prev[difficulty] || []), score].sort((a, b) => b - a).slice(0, 10);
+            const updated = { ...prev, [difficulty]: newScores };
+            localStorage.setItem('rhythmBoyHighScores', JSON.stringify(updated));
+            return updated;
+         });
+      }
+  }, [gameOver]);
 
-  // Constants for Visuals
-  const HIT_LINE_PERCENT = 20; // Hit line is at 20% from left
-  const BEAT_WIDTH_PERCENT = 18; // Each beat takes 18% width
+  // Constants
+  const HIT_LINE_PERCENT = 20; 
+  const BEAT_WIDTH_PERCENT = 18; 
 
   return (
     <>
@@ -471,8 +506,8 @@ function App() {
       <div style={{ 
           transform: `scale(${scale})`, 
           transformOrigin: 'center center',
-          width: '880px', // Updated Width
-          height: '460px', // Updated Height
+          width: '960px', 
+          height: '480px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -542,10 +577,10 @@ function App() {
             }
           `}</style>
 
-          <div className="relative w-full max-w-[880px] bg-[#333] rounded-[40px] p-8 console-shadow border-t border-white/10 flex flex-col items-center">
+          <div className="relative w-full max-w-[960px] bg-[#333] rounded-[40px] p-8 console-shadow border-t border-white/10 flex flex-col items-center">
               
               {/* --- SCREEN --- */}
-              <div className="w-full bg-[#171717] rounded-t-lg rounded-b-[30px] p-8 pt-4 shadow-[0_4px_0_#000] mb-8 relative border border-white/5">
+              <div className="w-full bg-[#171717] rounded-t-lg rounded-b-[30px] p-8 pt-4 shadow-[0_4px_0_#000] mb-6 relative border border-white/5">
                   <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
                       <div className={`w-2 h-2 rounded-full border border-black/50 ${isPlaying ? 'bg-green-500 shadow-[0_0_8px_#4ade80]' : 'bg-red-900'}`}></div>
                       <span className="text-[8px] text-white/30 font-pixel tracking-widest">POWER</span>
@@ -555,10 +590,10 @@ function App() {
                   </div>
                   
                   {/* LCD DISPLAY */}
-                  <div className="aspect-[2.2/1] w-full lcd-bg lcd-grid rounded-sm border-4 border-[#0f380f]/40 relative overflow-hidden flex flex-col shadow-[inset_0_0_20px_rgba(0,0,0,0.3)]">
+                  <div className="aspect-[2.4/1] w-full lcd-bg lcd-grid rounded-sm border-4 border-[#0f380f]/40 relative overflow-hidden flex flex-col shadow-[inset_0_0_20px_rgba(0,0,0,0.3)]">
                       
                       {/* HUD */}
-                      <div className="flex justify-between items-center p-3 bg-[#0f380f]/10 border-b border-[#0f380f]/20 h-12 z-20 relative">
+                      <div className="flex justify-between items-center p-3 bg-[#0f380f]/10 border-b border-[#0f380f]/20 h-10 z-20 relative">
                            <div className="font-pixel text-[#0f380f] text-sm w-1/3 flex flex-col">
                                <span className="text-[8px] opacity-60">SCORE</span>
                                <span>{score.toString().padStart(6, '0')}</span>
@@ -576,27 +611,32 @@ function App() {
                            </div>
                       </div>
 
-                      {/* MAIN GAME VIEW (SPLIT SCREEN) */}
-                      <div className="flex-1 flex flex-col relative z-0 py-2 overflow-hidden">
+                      {/* MAIN GAME VIEW (DUAL TRACK) */}
+                      <div className="flex-1 flex flex-col relative z-0 overflow-hidden">
                           
-                          {/* TOP: VISUAL PATTERNS (The Cards) */}
-                          <div className="h-1/2 relative border-b-2 border-[#0f380f]/20 w-full overflow-hidden">
-                              {/* Cards Conveyor */}
+                          {/* TRACK 1: PATTERNS (Top) */}
+                          <div className="h-3/5 relative border-b-2 border-[#0f380f]/30 w-full overflow-hidden">
+                              {/* 1. Hit Line (Vertical across) */}
+                              <div className="absolute top-0 bottom-0 w-[2px] bg-[#0f380f] z-30 opacity-50" style={{ left: `${HIT_LINE_PERCENT}%` }}></div>
+
+                              {/* Scrolling Patterns */}
                               {visiblePatterns.map((p, i) => (
                                   <div 
                                       key={`p-${i}`}
-                                      className="absolute top-1/2 -translate-y-1/2 h-20 border-2 border-[#0f380f] flex items-center justify-center bg-[#8bac0f] shadow-sm"
+                                      className="absolute top-1/2 -translate-y-1/2 h-full border-r border-[#0f380f]/20 flex items-center justify-center"
                                       style={{
                                           left: `${HIT_LINE_PERCENT + (p.offset * BEAT_WIDTH_PERCENT)}%`,
                                           width: `${BEAT_WIDTH_PERCENT}%`,
-                                          opacity: p.pattern.id === 'rest' ? 0.3 : 1
+                                          opacity: p.pattern.id === 'rest' ? 0.4 : 1
                                       }}
                                   >
-                                      <div className="w-full h-full p-2 text-[#0f380f]">
+                                      {/* Pattern Graphic */}
+                                      <div className="w-full h-full p-4 text-[#0f380f]">
                                           <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible">
                                               {p.pattern.render()}
                                           </svg>
                                       </div>
+                                      {/* Anchor Indicator */}
                                       {p.startBeat % 4 === 0 && (
                                           <div className="absolute top-1 left-1 text-[8px] text-[#0f380f] font-pixel opacity-50">1</div>
                                       )}
@@ -604,25 +644,27 @@ function App() {
                               ))}
                           </div>
 
-                          {/* BOTTOM: HIT TARGETS (The Notes) */}
-                          <div className="h-1/2 relative bg-[#0f380f]/5 w-full overflow-hidden">
+                          {/* TRACK 2: TARGETS (Bottom) */}
+                          <div className="h-2/5 relative w-full overflow-hidden bg-[#0f380f]/5">
                               
-                              {/* 1. Hit Frame (Fixed Target Zone) */}
-                              <div className="absolute top-1/2 -translate-y-1/2 w-8 h-8 border-4 border-[#0f380f] z-10" 
+                              {/* 1. Hit Line (Vertical across) */}
+                              <div className="absolute top-0 bottom-0 w-[2px] bg-[#0f380f] z-30 opacity-50" style={{ left: `${HIT_LINE_PERCENT}%` }}></div>
+                              
+                              {/* Hit Box Marker */}
+                              <div className="absolute top-1/2 -translate-y-1/2 w-8 h-8 border-4 border-[#0f380f] z-20" 
                                    style={{ left: `${HIT_LINE_PERCENT}%`, marginLeft: '-16px' }}>
                               </div>
 
-                              {/* 2. Scrolling Notes (Hollow Squares) */}
+                              {/* Scrolling Notes (Hollow Squares - Scaled Up) */}
                               {visibleTargets.map((t, i) => (
                                   <div 
                                       key={`t-${i}`}
-                                      className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-[#0f380f] bg-transparent
-                                          ${!showGuides && !t.missed && !t.hit ? 'opacity-0' : ''}
-                                          ${t.hit ? 'opacity-0' : t.missed ? 'opacity-30' : ''}
+                                      className={`absolute top-1/2 -translate-y-1/2 w-6 h-6 border-4 border-[#0f380f] bg-transparent
+                                          ${t.hit ? 'opacity-0 scale-150' : t.missed ? 'opacity-30' : ''}
                                       `}
                                       style={{
                                           left: `${HIT_LINE_PERCENT + (t.offset * BEAT_WIDTH_PERCENT)}%`,
-                                          marginLeft: '-8px' // Center anchor
+                                          marginLeft: '-12px' // Center anchor (half of width)
                                       }}
                                   />
                               ))}
@@ -630,9 +672,9 @@ function App() {
 
                       </div>
 
-                      {/* GAME OVER (Overlay Layer) */}
+                      {/* GAME OVER (Safe Overlay) */}
                       {gameOver && (
-                          <div className="absolute inset-0 bg-[#8bac0f] z-50 flex flex-col items-center justify-center p-8 font-pixel text-[#0f380f]">
+                          <div className="absolute inset-0 bg-[#8bac0f] z-[999] flex flex-col items-center justify-center p-8 font-pixel text-[#0f380f]">
                               <div className="text-4xl mb-6 font-bold">GAME OVER</div>
                               <div className="text-2xl mb-6">SCORE: {score}</div>
                               <div className="text-xs uppercase mb-4">Top 10 (Lvl {difficulty})</div>
@@ -692,9 +734,11 @@ function App() {
                               <span className="font-pixel text-[10px] text-white/60">PAUSE</span>
                           </button>
                           <div className="flex flex-col items-end">
-                              <span className="font-pixel text-[8px] text-white/30 mb-1">GUIDE</span>
-                              <button onClick={() => setShowGuides(!showGuides)} className="w-12 h-6 switch-track flex items-center px-1">
-                                  <div className={`w-4 h-4 rounded-full shadow-md switch-thumb ${showGuides ? 'bg-green-500 translate-x-6' : 'bg-gray-500 translate-x-0'}`}></div>
+                              <span className="font-pixel text-[8px] text-white/30 mb-1">AUDIO</span>
+                              <button onClick={() => setGuideAudio(!guideAudio)} className="w-12 h-6 switch-track flex items-center px-1">
+                                  <div className={`w-4 h-4 rounded-full shadow-md switch-thumb flex items-center justify-center ${guideAudio ? 'bg-green-500 translate-x-6' : 'bg-gray-500 translate-x-0'}`}>
+                                      {guideAudio ? <Volume2 size={10} className="text-black" /> : <VolumeX size={10} className="text-black" />}
+                                  </div>
                               </button>
                           </div>
                       </div>
