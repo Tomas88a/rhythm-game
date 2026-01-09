@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Lock, Heart, Pause, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 
 /**
- * RHYTHM BOY: INFINITE ARCADE - v24.0 (Geometry Fix)
- * * PATTERNS: Lifted vertically to top-[45%] to utilize empty headroom and stop clipping.
- * * TARGETS: Forced vertical alignment to center (top-1/2) for perfect registration.
- * * LAYOUT: Track split adjusted to 70/30 to give patterns more breathing room.
+ * RHYTHM BOY: INFINITE ARCADE - v25.0 (Visual Polish)
+ * * PATTERNS: Lifted significantly to top-[30%] to use top whitespace and avoid clipping.
+ * * TARGETS: Lifted to top-[40%] of the bottom track to fix "sinking" look.
+ * * UI: Fixed Slider overflow in Config panel by adjusting margins and heights.
  */
 
 // --- Audio Engine ---
@@ -158,7 +158,6 @@ function App() {
         const h = window.innerHeight;
         const isPortrait = h > w;
         
-        // Revised base resolution for modern phones (Wider and Shorter)
         const gameW = 1000; 
         const gameH = 440; 
         
@@ -559,7 +558,7 @@ function App() {
             .switch-thumb { transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1); }
             input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
             input[type=range]::-webkit-slider-thumb {
-                -webkit-appearance: none; height: 20px; width: 30px; border-radius: 4px; background: #666; border: 2px solid #222; box-shadow: 0 2px 4px rgba(0,0,0,0.5); margin-top: -8px; cursor: grab;
+                -webkit-appearance: none; height: 16px; width: 24px; border-radius: 4px; background: #666; border: 2px solid #222; box-shadow: 0 2px 4px rgba(0,0,0,0.5); margin-top: -6px; cursor: grab;
             }
             input[type=range]::-webkit-slider-runnable-track {
                 width: 100%; height: 4px; background: #111; border-radius: 2px; border: 1px solid #444;
@@ -605,8 +604,9 @@ function App() {
                           
                           {/* TRACK 1: PATTERNS (Top - 70% Height - Moved UP) */}
                           <div className="h-[70%] relative border-b-2 border-[#0f380f]/30 w-full overflow-hidden">
-                              {/* Hit Line */}
+                              {/* Hit Line (Top Segment) */}
                               <div className="absolute top-0 bottom-0 w-[2px] bg-[#0f380f] z-30 opacity-70" style={{ left: `${HIT_LINE_PERCENT}%` }}>
+                                   {/* Top Marker */}
                                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#0f380f]"></div>
                               </div>
 
@@ -614,19 +614,21 @@ function App() {
                               {visiblePatterns.map((p, i) => (
                                   <div 
                                       key={`p-${i}`}
-                                      className="absolute top-[45%] -translate-y-1/2 h-full flex items-center justify-center"
+                                      className="absolute top-[30%] -translate-y-1/2 h-full flex items-center justify-center"
                                       style={{
                                           left: `${HIT_LINE_PERCENT + (p.offset * BEAT_WIDTH_PERCENT)}%`,
                                           width: `${BEAT_WIDTH_PERCENT}%`,
                                           opacity: p.pattern.id === 'rest' ? 0.4 : 1,
-                                          transform: 'scale(1.0)' // Reset scale to 1.0 for better fit
+                                          transform: 'scale(1.0)' // Scale 1.0 to fit
                                       }}
                                   >
+                                      {/* Pattern Graphic */}
                                       <div className="w-full h-full p-4 text-[#0f380f]">
                                           <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible">
                                               {p.pattern.render()}
                                           </svg>
                                       </div>
+                                      {/* Anchor Indicator */}
                                       {p.startBeat % 4 === 0 && (
                                           <div className="absolute top-1 left-1 text-[8px] text-[#0f380f] font-pixel opacity-50">1</div>
                                       )}
@@ -637,26 +639,27 @@ function App() {
                           {/* TRACK 2: TARGETS (Bottom - 30% Height - Centered) */}
                           <div className="h-[30%] relative w-full overflow-hidden bg-[#0f380f]/5">
                               
-                              {/* Hit Line */}
+                              {/* Hit Line (Bottom Segment) */}
                               <div className="absolute top-0 bottom-0 w-[2px] bg-[#0f380f] z-30 opacity-70" style={{ left: `${HIT_LINE_PERCENT}%` }}>
+                                   {/* Bottom Marker */}
                                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#0f380f]"></div>
                               </div>
                               
-                              {/* Hit Box Marker (Vertically Centered at 50%) */}
-                              <div className="absolute top-1/2 -translate-y-1/2 w-8 h-8 border-4 border-[#0f380f] z-20" 
+                              {/* Hit Box Marker (Vertically Centered at 40% for visual balance) */}
+                              <div className="absolute top-[40%] -translate-y-1/2 w-8 h-8 border-4 border-[#0f380f] z-20" 
                                    style={{ left: `${HIT_LINE_PERCENT}%`, marginLeft: '-16px' }}>
                               </div>
 
-                              {/* Scrolling Notes (Vertically Centered at 50%) */}
+                              {/* Scrolling Notes (Vertically Centered at 40%) */}
                               {visibleTargets.map((t, i) => (
                                   <div 
                                       key={`t-${i}`}
-                                      className={`absolute top-1/2 -translate-y-1/2 w-6 h-6 border-4 border-[#0f380f] bg-transparent
+                                      className={`absolute top-[40%] -translate-y-1/2 w-6 h-6 border-4 border-[#0f380f] bg-transparent
                                           ${t.hit ? 'opacity-0 scale-150' : t.missed ? 'opacity-30' : ''}
                                       `}
                                       style={{
                                           left: `${HIT_LINE_PERCENT + (t.offset * BEAT_WIDTH_PERCENT)}%`,
-                                          marginLeft: '-12px'
+                                          marginLeft: '-12px' // Center anchor
                                       }}
                                   />
                               ))}
@@ -664,7 +667,7 @@ function App() {
 
                       </div>
 
-                      {/* GAME OVER */}
+                      {/* GAME OVER (Overlay Layer) */}
                       {gameOver && (
                           <div className="absolute inset-0 bg-[#8bac0f] z-[999] flex flex-col items-center justify-center p-8 font-pixel text-[#0f380f]">
                               <div className="text-4xl mb-6 font-bold">GAME OVER</div>
