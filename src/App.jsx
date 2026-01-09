@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Lock, Heart, Pause, RotateCcw, Eye, EyeOff, Menu, Play, Square } from 'lucide-react';
 
 /**
- * RHYTHM BOY: INFINITE ARCADE - v18.0 (Visual Flow Overhaul)
- * * FIXED: Crash on Game Over (Decoupled rendering).
- * * FEATURE: True Infinite Conveyor Belt. Patterns scroll Right -> Left.
- * * UI: Patterns are now rendered directly on the track as moving blocks.
+ * RHYTHM BOY: INFINITE ARCADE - v19.0 (Dual Track & Mobile Aspect Ratio)
+ * * FEATURE: Split screen into Top (Visual Pattern) and Bottom (Hit Note) tracks.
+ * * VISUAL: Changed hit notes to Hollow Squares.
+ * * MOBILE: Adjusted base resolution (880x460) to fit wider/shorter mobile viewports better.
  */
 
 // --- Audio Engine ---
@@ -144,22 +144,28 @@ function App() {
 
   useEffect(() => { difficultyRef.current = difficulty; }, [difficulty]);
 
-  // Scale Logic
+  // Scale Logic (Optimized for Mobile)
   useEffect(() => {
     const handleResize = () => {
         const w = window.innerWidth;
         const h = window.innerHeight;
         const isPortrait = h > w;
-        const gameW = 920; 
-        const gameH = 550;
+        
+        // Revised base resolution for modern phones (Wider and Shorter)
+        const gameW = 880; 
+        const gameH = 460; // Reduced height to avoid bezel/notch issues
+        
         let s, rotate;
         if (isPortrait) {
+            // Force rotate
             s = Math.min(h / gameW, w / gameH) * 0.95;
             rotate = 'rotate(90deg)';
         } else {
+            // Standard landscape
             s = Math.min(w / gameW, h / gameH) * 0.95;
             rotate = 'rotate(0deg)';
         }
+        
         const container = document.getElementById('game-container');
         if (container) {
             container.style.transform = `${rotate} scale(${s})`;
@@ -288,15 +294,13 @@ function App() {
       const secondsPerBeat = 60.0 / bpm;
       const currentAbsBeat = (ctx.currentTime - startTimeRef.current) / secondsPerBeat;
 
-      // 1. Prepare Visible Patterns (The Cards Moving)
-      // We show patterns from currentBeat - 1 to currentBeat + 3
-      // HIT LINE is at beat 0 relative offset.
-      // So patterns with startBeat > current - 1 and < current + 4 are visible.
+      // 1. Prepare Visible Patterns (Upper Track)
+      // Viewport: 0 to +4 beats
       const visiblePats = patternQueueRef.current.filter(p => 
           p.startBeat > currentAbsBeat - 2 && p.startBeat < currentAbsBeat + 5
       ).map(p => ({
           ...p,
-          offset: p.startBeat - currentAbsBeat // Negative means passed, 0 is now
+          offset: p.startBeat - currentAbsBeat
       }));
       setVisiblePatterns(visiblePats);
 
@@ -318,11 +322,7 @@ function App() {
           if (idx > 0) patternQueueRef.current = patternQueueRef.current.slice(idx);
       }
 
-      // 4. Targets (Individual Dots)
-      // Only needed if Guide is ON? Or distinct from cards?
-      // Let's render notes ON TOP of cards.
-      // We won't set separate targets state, we can derive from patterns? 
-      // No, for hit feedback we need individual note status.
+      // 4. Targets (Lower Track)
       const visibleNotes = noteQueueRef.current.filter(n => 
           n.absBeat > currentAbsBeat - 2 && n.absBeat < currentAbsBeat + 5
       ).map(n => ({
@@ -392,7 +392,7 @@ function App() {
           }
       }
 
-      if (bestNote && minDiff <= 0.4) { // 0.4 beat window
+      if (bestNote && minDiff <= 0.4) { 
           bestNote.hit = true;
           const isPerfect = minDiff <= 0.15;
           const points = isPerfect ? 100 : 50;
@@ -426,8 +426,8 @@ function App() {
       resetGame();
       
       lastGenBeatRef.current = -5;
-      generateChunk(); // Count-in
-      generateChunk(); // First measure
+      generateChunk(); 
+      generateChunk(); 
       
       startTimeRef.current = engineRef.current.ctx.currentTime + 0.1;
       
@@ -471,8 +471,8 @@ function App() {
       <div style={{ 
           transform: `scale(${scale})`, 
           transformOrigin: 'center center',
-          width: '920px', 
-          height: '550px',
+          width: '880px', // Updated Width
+          height: '460px', // Updated Height
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -542,7 +542,7 @@ function App() {
             }
           `}</style>
 
-          <div className="relative w-full max-w-[900px] bg-[#333] rounded-[40px] p-8 console-shadow border-t border-white/10 flex flex-col items-center">
+          <div className="relative w-full max-w-[880px] bg-[#333] rounded-[40px] p-8 console-shadow border-t border-white/10 flex flex-col items-center">
               
               {/* --- SCREEN --- */}
               <div className="w-full bg-[#171717] rounded-t-lg rounded-b-[30px] p-8 pt-4 shadow-[0_4px_0_#000] mb-8 relative border border-white/5">
@@ -576,32 +576,27 @@ function App() {
                            </div>
                       </div>
 
-                      {/* MAIN GAME VIEW (INFINITE SCROLL) */}
-                      <div className="flex-1 relative overflow-hidden">
+                      {/* MAIN GAME VIEW (SPLIT SCREEN) */}
+                      <div className="flex-1 flex flex-col relative z-0 py-2 overflow-hidden">
                           
-                          {/* 1. Hit Line (Fixed) */}
-                          <div className="absolute top-0 bottom-0 w-[2px] bg-[#0f380f] z-10" style={{ left: `${HIT_LINE_PERCENT}%` }}></div>
-                          <div className="absolute top-1/2 w-12 h-12 border-4 border-[#0f380f] -translate-x-1/2 -translate-y-1/2 rounded opacity-50 z-0" style={{ left: `${HIT_LINE_PERCENT}%` }}></div>
-
-                          {/* 2. Scrolling Patterns (The Conveyor Belt) */}
-                          <div className="absolute inset-0">
+                          {/* TOP: VISUAL PATTERNS (The Cards) */}
+                          <div className="h-1/2 relative border-b-2 border-[#0f380f]/20 w-full overflow-hidden">
+                              {/* Cards Conveyor */}
                               {visiblePatterns.map((p, i) => (
                                   <div 
-                                      key={i} 
-                                      className="absolute top-1/2 -translate-y-1/2 h-24 border-2 border-[#0f380f] flex items-center justify-center bg-[#8bac0f]"
+                                      key={`p-${i}`}
+                                      className="absolute top-1/2 -translate-y-1/2 h-20 border-2 border-[#0f380f] flex items-center justify-center bg-[#8bac0f] shadow-sm"
                                       style={{
                                           left: `${HIT_LINE_PERCENT + (p.offset * BEAT_WIDTH_PERCENT)}%`,
                                           width: `${BEAT_WIDTH_PERCENT}%`,
                                           opacity: p.pattern.id === 'rest' ? 0.3 : 1
                                       }}
                                   >
-                                      {/* Pattern Graphic */}
                                       <div className="w-full h-full p-2 text-[#0f380f]">
                                           <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible">
                                               {p.pattern.render()}
                                           </svg>
                                       </div>
-                                      {/* Anchor Indicator */}
                                       {p.startBeat % 4 === 0 && (
                                           <div className="absolute top-1 left-1 text-[8px] text-[#0f380f] font-pixel opacity-50">1</div>
                                       )}
@@ -609,19 +604,29 @@ function App() {
                               ))}
                           </div>
 
-                          {/* 3. Note Targets (Dots) */}
-                          {visibleTargets.map((t, i) => (
-                              <div 
-                                  key={`t-${i}`}
-                                  className={`absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-[#0f380f] rounded-full z-10
-                                      ${!showGuides && !t.missed && !t.hit ? 'opacity-0' : ''}
-                                      ${t.hit ? 'opacity-0' : t.missed ? 'opacity-30' : ''}
-                                  `}
-                                  style={{
-                                      left: `${HIT_LINE_PERCENT + (t.offset * BEAT_WIDTH_PERCENT)}%`
-                                  }}
-                              />
-                          ))}
+                          {/* BOTTOM: HIT TARGETS (The Notes) */}
+                          <div className="h-1/2 relative bg-[#0f380f]/5 w-full overflow-hidden">
+                              
+                              {/* 1. Hit Frame (Fixed Target Zone) */}
+                              <div className="absolute top-1/2 -translate-y-1/2 w-8 h-8 border-4 border-[#0f380f] z-10" 
+                                   style={{ left: `${HIT_LINE_PERCENT}%`, marginLeft: '-16px' }}>
+                              </div>
+
+                              {/* 2. Scrolling Notes (Hollow Squares) */}
+                              {visibleTargets.map((t, i) => (
+                                  <div 
+                                      key={`t-${i}`}
+                                      className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-[#0f380f] bg-transparent
+                                          ${!showGuides && !t.missed && !t.hit ? 'opacity-0' : ''}
+                                          ${t.hit ? 'opacity-0' : t.missed ? 'opacity-30' : ''}
+                                      `}
+                                      style={{
+                                          left: `${HIT_LINE_PERCENT + (t.offset * BEAT_WIDTH_PERCENT)}%`,
+                                          marginLeft: '-8px' // Center anchor
+                                      }}
+                                  />
+                              ))}
+                          </div>
 
                       </div>
 
