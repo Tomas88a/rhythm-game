@@ -2,11 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Lock, Heart, Pause, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 
 /**
- * RHYTHM BOY: INFINITE ARCADE - v20.0 (Wide Screen & Audio Guide)
- * * RATIO: Updated to 960x480 (2:1) for modern mobile screens.
- * * VISUAL: Added vertical Hit Line across tracks. Scaled up notes.
- * * FEATURE: GUIDE button now toggles "Auto-Play Audio" instead of visual visibility.
- * * FIX: Hardened Game Over screen rendering to prevent black screens.
+ * RHYTHM BOY: INFINITE ARCADE - v21.0 (Hardcore & Ultra Wide)
+ * * JUDGEMENT: Significantly stricter timing windows (0.25 for Hit, 0.08 for Perfect).
+ * * LAYOUT: Base resolution 1000x440. Panels compressed to h-24. Screen aspect 2.8:1.
+ * * FEEDBACK: "PERFECT" text is back.
  */
 
 // --- Audio Engine ---
@@ -117,7 +116,7 @@ const PATTERNS = {
 function App() {
   const [bpm, setBpm] = useState(85);
   const [difficulty, setDifficulty] = useState(1);
-  const [guideAudio, setGuideAudio] = useState(true); // guideAudio instead of showGuides
+  const [guideAudio, setGuideAudio] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [hp, setHp] = useState(100);
   const [score, setScore] = useState(0);
@@ -144,7 +143,7 @@ function App() {
   const animRef = useRef(null);
   const lastTapRef = useRef(0);
   const difficultyRef = useRef(1); 
-  const guideAudioRef = useRef(true); // Ref for audio loop access
+  const guideAudioRef = useRef(true); 
 
   const playheadRef = useRef(null);
   const timelineRef = useRef(null); 
@@ -152,24 +151,22 @@ function App() {
   useEffect(() => { difficultyRef.current = difficulty; }, [difficulty]);
   useEffect(() => { guideAudioRef.current = guideAudio; }, [guideAudio]);
 
-  // Scale Logic (Optimized for 18:9 Mobile)
+  // Scale Logic (Ultra Wide 1000x440)
   useEffect(() => {
     const handleResize = () => {
         const w = window.innerWidth;
         const h = window.innerHeight;
         const isPortrait = h > w;
         
-        // Revised base resolution for wider screens (approx 2:1)
-        const gameW = 960; 
-        const gameH = 480; 
+        // Revised base resolution for modern phones (Wider and Shorter)
+        const gameW = 1000; 
+        const gameH = 440; 
         
         let s, rotate;
         if (isPortrait) {
-            // Force rotate
             s = Math.min(h / gameW, w / gameH) * 0.95;
             rotate = 'rotate(90deg)';
         } else {
-            // Standard landscape
             s = Math.min(w / gameW, h / gameH) * 0.95;
             rotate = 'rotate(0deg)';
         }
@@ -282,12 +279,10 @@ function App() {
           const noteTime = startTimeRef.current + (note.absBeat * secondsPerBeat);
           if (noteTime < ctx.currentTime + scheduleAheadTime) {
               
-              // Always play Click (Metronome) on Beat
               if (note.absBeat % 1 === 0) {
                   dev.playClick(noteTime, note.absBeat % 4 === 0);
               }
 
-              // Play Guide Sounds only if Enabled
               if (guideAudioRef.current) {
                   if (note.type === 'kick') dev.playKick(noteTime);
                   else dev.playSnare(noteTime);
@@ -304,12 +299,11 @@ function App() {
 
   // Visual Loop
   const visualLoop = useCallback(() => {
-      if (!isPlaying || !engineRef.current) return; // Removed gameOver check to allow overlay render
+      if (!isPlaying || !engineRef.current) return; 
       const ctx = engineRef.current.ctx;
       const secondsPerBeat = 60.0 / bpm;
       const currentAbsBeat = (ctx.currentTime - startTimeRef.current) / secondsPerBeat;
 
-      // 1. Update Active Pattern
       const activePat = patternQueueRef.current.find(p => 
           currentAbsBeat >= p.startBeat && currentAbsBeat < p.startBeat + 1
       );
@@ -322,12 +316,10 @@ function App() {
       }
 
       if (gameOver) {
-          // Just render current frame but don't process logic
           animRef.current = requestAnimationFrame(visualLoop);
           return;
       }
 
-      // 2. Check Misses
       noteQueueRef.current.forEach(note => {
           if (!note.missed && !note.hit && currentAbsBeat > note.absBeat + 0.5) {
               note.missed = true;
@@ -335,7 +327,6 @@ function App() {
           }
       });
 
-      // 3. Prune Old
       if (noteQueueRef.current.length > 50) {
           const idx = noteQueueRef.current.findIndex(n => n.absBeat > currentAbsBeat - 2);
           if (idx > 0) noteQueueRef.current = noteQueueRef.current.slice(idx);
@@ -345,7 +336,6 @@ function App() {
           if (idx > 0) patternQueueRef.current = patternQueueRef.current.slice(idx);
       }
 
-      // 4. Update Targets
       const visible = noteQueueRef.current.filter(n => 
           n.absBeat > currentAbsBeat - 2 && n.absBeat < currentAbsBeat + 6
       ).map(n => ({
@@ -354,7 +344,6 @@ function App() {
       }));
       setVisibleTargets(visible);
 
-      // 5. Update Patterns
       const visiblePats = patternQueueRef.current.filter(p => 
           p.startBeat > currentAbsBeat - 2 && p.startBeat < currentAbsBeat + 6
       ).map(p => ({
@@ -423,12 +412,12 @@ function App() {
           }
       }
 
-      if (bestNote && minDiff <= 0.4) { 
+      if (bestNote && minDiff <= 0.25) { 
           bestNote.hit = true;
-          const isPerfect = minDiff <= 0.15;
+          const isPerfect = minDiff <= 0.08;
           const points = isPerfect ? 100 : 50;
           setScore(s => s + points + (Math.floor(combo/10)*10));
-          triggerFeedback(isPerfect ? "PERF" : "GOOD", "good");
+          triggerFeedback(isPerfect ? "PERFECT" : "GOOD", "good");
       } else {
           triggerFeedback("BAD", "bad");
       }
@@ -506,8 +495,8 @@ function App() {
       <div style={{ 
           transform: `scale(${scale})`, 
           transformOrigin: 'center center',
-          width: '960px', 
-          height: '480px',
+          width: '1000px', 
+          height: '440px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -577,7 +566,7 @@ function App() {
             }
           `}</style>
 
-          <div className="relative w-full max-w-[960px] bg-[#333] rounded-[40px] p-8 console-shadow border-t border-white/10 flex flex-col items-center">
+          <div className="relative w-full max-w-[1000px] bg-[#333] rounded-[40px] p-8 console-shadow border-t border-white/10 flex flex-col items-center">
               
               {/* --- SCREEN --- */}
               <div className="w-full bg-[#171717] rounded-t-lg rounded-b-[30px] p-8 pt-4 shadow-[0_4px_0_#000] mb-6 relative border border-white/5">
@@ -590,7 +579,7 @@ function App() {
                   </div>
                   
                   {/* LCD DISPLAY */}
-                  <div className="aspect-[2.4/1] w-full lcd-bg lcd-grid rounded-sm border-4 border-[#0f380f]/40 relative overflow-hidden flex flex-col shadow-[inset_0_0_20px_rgba(0,0,0,0.3)]">
+                  <div className="aspect-[2.8/1] w-full lcd-bg lcd-grid rounded-sm border-4 border-[#0f380f]/40 relative overflow-hidden flex flex-col shadow-[inset_0_0_20px_rgba(0,0,0,0.3)]">
                       
                       {/* HUD */}
                       <div className="flex justify-between items-center p-3 bg-[#0f380f]/10 border-b border-[#0f380f]/20 h-10 z-20 relative">
@@ -627,7 +616,8 @@ function App() {
                                       style={{
                                           left: `${HIT_LINE_PERCENT + (p.offset * BEAT_WIDTH_PERCENT)}%`,
                                           width: `${BEAT_WIDTH_PERCENT}%`,
-                                          opacity: p.pattern.id === 'rest' ? 0.4 : 1
+                                          opacity: p.pattern.id === 'rest' ? 0.4 : 1,
+                                          transform: 'scale(1.2)' // Scale up patterns
                                       }}
                                   >
                                       {/* Pattern Graphic */}
@@ -664,7 +654,8 @@ function App() {
                                       `}
                                       style={{
                                           left: `${HIT_LINE_PERCENT + (t.offset * BEAT_WIDTH_PERCENT)}%`,
-                                          marginLeft: '-12px' // Center anchor (half of width)
+                                          marginLeft: '-12px', // Center anchor (half of width)
+                                          transform: 'scale(1.2)' // Scale up notes
                                       }}
                                   />
                               ))}
@@ -692,13 +683,13 @@ function App() {
               {/* --- CONTROL DECK --- */}
               <div className="w-full flex items-start justify-between gap-6 px-4">
                   {/* Left: Config */}
-                  <div className="flex-1 h-32 panel-box p-4 flex flex-col justify-between">
+                  <div className="flex-1 h-24 panel-box p-3 flex flex-col justify-between">
                       <span className="panel-label">CONFIG</span>
                       <div>
                           <div className="font-pixel text-[10px] text-white/40 mb-2">LEVEL</div>
                           <div className="flex gap-2">
                               {[1, 2, 3].map(lvl => (
-                                  <button key={lvl} onClick={() => !isPlaying && setDifficulty(lvl)} className={`flex-1 h-8 rounded text-xs font-pixel font-bold btn-level ${difficulty === lvl ? 'active' : ''}`}>
+                                  <button key={lvl} onClick={() => !isPlaying && setDifficulty(lvl)} className={`flex-1 h-6 rounded text-xs font-pixel font-bold btn-level ${difficulty === lvl ? 'active' : ''}`}>
                                       {lvl}
                                   </button>
                               ))}
@@ -717,20 +708,20 @@ function App() {
                   <div className="w-48 flex flex-col items-center justify-start shrink-0">
                       <button 
                           onPointerDown={handleTap}
-                          className={`w-32 h-32 btn-arcade group flex items-center justify-center ${isSpacePressed ? 'pressed' : ''}`}
+                          className={`w-32 h-24 btn-arcade group flex items-center justify-center ${isSpacePressed ? 'pressed' : ''}`}
                           style={{ touchAction: 'none' }}
                       >
                           <span className="font-pixel text-white/90 text-3xl tracking-widest opacity-80 group-active:translate-y-1">TAP</span>
                       </button>
-                      <div className="mt-3 font-pixel text-[10px] text-white/20 uppercase tracking-[0.2em]">{isPlaying ? "PLAYING" : (gameOver ? "RETRY" : "START")}</div>
+                      <div className="mt-2 font-pixel text-[10px] text-white/20 uppercase tracking-[0.2em]">{isPlaying ? "PLAYING" : (gameOver ? "RETRY" : "START")}</div>
                   </div>
 
                   {/* Right: System */}
-                  <div className="flex-1 h-32 panel-box p-4 flex flex-col justify-between">
+                  <div className="flex-1 h-24 panel-box p-3 flex flex-col justify-between">
                       <span className="panel-label">SYSTEM</span>
                       <div className="flex justify-between items-center gap-4">
-                          <button onClick={togglePause} className="flex-1 h-10 bg-[#333] border border-[#555] rounded flex items-center justify-center gap-2 hover:bg-[#444] active:bg-[#222]" disabled={!isPlaying}>
-                              <Pause size={16} className="text-white/60" />
+                          <button onClick={togglePause} className="flex-1 h-8 bg-[#333] border border-[#555] rounded flex items-center justify-center gap-2 hover:bg-[#444] active:bg-[#222]" disabled={!isPlaying}>
+                              <Pause size={14} className="text-white/60" />
                               <span className="font-pixel text-[10px] text-white/60">PAUSE</span>
                           </button>
                           <div className="flex flex-col items-end">
@@ -742,8 +733,8 @@ function App() {
                               </button>
                           </div>
                       </div>
-                      <button onClick={resetGame} className="w-full h-8 mt-auto flex items-center justify-center gap-2 text-red-400 hover:text-red-300 transition-colors">
-                          <RotateCcw size={14} />
+                      <button onClick={resetGame} className="w-full h-6 mt-auto flex items-center justify-center gap-2 text-red-400 hover:text-red-300 transition-colors">
+                          <RotateCcw size={12} />
                           <span className="font-pixel text-[10px]">RESET GAME</span>
                       </button>
                   </div>
