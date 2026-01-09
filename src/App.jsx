@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Lock, Heart, Pause, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 
 /**
- * RHYTHM BOY: INFINITE ARCADE - v25.0 (Visual Polish)
- * * PATTERNS: Lifted significantly to top-[30%] to use top whitespace and avoid clipping.
- * * TARGETS: Lifted to top-[40%] of the bottom track to fix "sinking" look.
- * * UI: Fixed Slider overflow in Config panel by adjusting margins and heights.
+ * RHYTHM BOY: INFINITE ARCADE - v26.0 (Ultra Compact & Card Style)
+ * * RATIO: Compressed base height to 380px (approx 2.6:1) for maximum mobile compatibility.
+ * * VISUAL: Patterns are now individual boxed cards with gaps, lifted to top-[20%].
+ * * UI: Panels compressed to h-20. Slider layout tightened to prevent overflow.
  */
 
 // --- Audio Engine ---
@@ -151,15 +151,16 @@ function App() {
   useEffect(() => { difficultyRef.current = difficulty; }, [difficulty]);
   useEffect(() => { guideAudioRef.current = guideAudio; }, [guideAudio]);
 
-  // Scale Logic (Ultra Wide 1000x440)
+  // Scale Logic (Ultra Compact 1000x380)
   useEffect(() => {
     const handleResize = () => {
         const w = window.innerWidth;
         const h = window.innerHeight;
         const isPortrait = h > w;
         
+        // Compact height for mobile browsers
         const gameW = 1000; 
-        const gameH = 440; 
+        const gameH = 380; 
         
         let s, rotate;
         if (isPortrait) {
@@ -495,7 +496,7 @@ function App() {
           transform: `scale(${scale})`, 
           transformOrigin: 'center center',
           width: '1000px', 
-          height: '440px',
+          height: '380px', // Compressed height
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -524,7 +525,7 @@ function App() {
             }
             .panel-label {
                 position: absolute;
-                top: -8px; left: 10px;
+                top: -6px; left: 10px;
                 background: #333;
                 padding: 0 4px;
                 font-family: 'Press Start 2P', monospace;
@@ -565,10 +566,10 @@ function App() {
             }
           `}</style>
 
-          <div className="relative w-full max-w-[1000px] bg-[#333] rounded-[40px] p-8 console-shadow border-t border-white/10 flex flex-col items-center">
+          <div className="relative w-full max-w-[1000px] bg-[#333] rounded-[40px] p-6 console-shadow border-t border-white/10 flex flex-col items-center">
               
               {/* --- SCREEN --- */}
-              <div className="w-full bg-[#171717] rounded-t-lg rounded-b-[30px] p-8 pt-4 shadow-[0_4px_0_#000] mb-6 relative border border-white/5">
+              <div className="w-full bg-[#171717] rounded-t-lg rounded-b-[30px] p-8 pt-4 shadow-[0_4px_0_#000] mb-4 relative border border-white/5">
                   <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
                       <div className={`w-2 h-2 rounded-full border border-black/50 ${isPlaying ? 'bg-green-500 shadow-[0_0_8px_#4ade80]' : 'bg-red-900'}`}></div>
                       <span className="text-[8px] text-white/30 font-pixel tracking-widest">POWER</span>
@@ -578,10 +579,10 @@ function App() {
                   </div>
                   
                   {/* LCD DISPLAY */}
-                  <div className="aspect-[2.8/1] w-full lcd-bg lcd-grid rounded-sm border-4 border-[#0f380f]/40 relative overflow-hidden flex flex-col shadow-[inset_0_0_20px_rgba(0,0,0,0.3)]">
+                  <div className="aspect-[3/1] w-full lcd-bg lcd-grid rounded-sm border-4 border-[#0f380f]/40 relative overflow-hidden flex flex-col shadow-[inset_0_0_20px_rgba(0,0,0,0.3)]">
                       
                       {/* HUD */}
-                      <div className="flex justify-between items-center p-3 bg-[#0f380f]/10 border-b border-[#0f380f]/20 h-10 z-20 relative">
+                      <div className="flex justify-between items-center p-2 bg-[#0f380f]/10 border-b border-[#0f380f]/20 h-10 z-20 relative">
                            <div className="font-pixel text-[#0f380f] text-sm w-1/3 flex flex-col">
                                <span className="text-[8px] opacity-60">SCORE</span>
                                <span>{score.toString().padStart(6, '0')}</span>
@@ -602,55 +603,53 @@ function App() {
                       {/* MAIN GAME VIEW (DUAL TRACK) */}
                       <div className="flex-1 flex flex-col relative z-0 overflow-hidden">
                           
-                          {/* TRACK 1: PATTERNS (Top - 70% Height - Moved UP) */}
+                          {/* TRACK 1: PATTERNS (Top - 70% Height - Moved UP to 20%) */}
                           <div className="h-[70%] relative border-b-2 border-[#0f380f]/30 w-full overflow-hidden">
-                              {/* Hit Line (Top Segment) */}
                               <div className="absolute top-0 bottom-0 w-[2px] bg-[#0f380f] z-30 opacity-70" style={{ left: `${HIT_LINE_PERCENT}%` }}>
-                                   {/* Top Marker */}
                                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#0f380f]"></div>
                               </div>
 
-                              {/* Scrolling Patterns */}
+                              {/* Scrolling Patterns (Cards with gap) */}
                               {visiblePatterns.map((p, i) => (
                                   <div 
                                       key={`p-${i}`}
-                                      className="absolute top-[30%] -translate-y-1/2 h-full flex items-center justify-center"
+                                      className="absolute top-[20%] -translate-y-1/2 h-full flex items-center justify-center"
                                       style={{
                                           left: `${HIT_LINE_PERCENT + (p.offset * BEAT_WIDTH_PERCENT)}%`,
                                           width: `${BEAT_WIDTH_PERCENT}%`,
                                           opacity: p.pattern.id === 'rest' ? 0.4 : 1,
-                                          transform: 'scale(1.0)' // Scale 1.0 to fit
+                                          transform: 'scale(1.0)'
                                       }}
                                   >
-                                      {/* Pattern Graphic */}
-                                      <div className="w-full h-full p-4 text-[#0f380f]">
-                                          <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible">
-                                              {p.pattern.render()}
-                                          </svg>
+                                      {/* Card Box */}
+                                      <div className="w-[90%] h-[80%] border-2 border-[#0f380f] rounded-sm bg-[#8bac0f] shadow-sm flex items-center justify-center p-2 relative">
+                                          <div className="text-[#0f380f] w-full h-full">
+                                              <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible">
+                                                  {p.pattern.render()}
+                                              </svg>
+                                          </div>
+                                          {/* Anchor Indicator */}
+                                          {p.startBeat % 4 === 0 && (
+                                              <div className="absolute top-1 left-1 text-[8px] text-[#0f380f] font-pixel opacity-50">1</div>
+                                          )}
                                       </div>
-                                      {/* Anchor Indicator */}
-                                      {p.startBeat % 4 === 0 && (
-                                          <div className="absolute top-1 left-1 text-[8px] text-[#0f380f] font-pixel opacity-50">1</div>
-                                      )}
                                   </div>
                               ))}
                           </div>
 
-                          {/* TRACK 2: TARGETS (Bottom - 30% Height - Centered) */}
+                          {/* TRACK 2: TARGETS (Bottom - 30% Height - Centered at 40%) */}
                           <div className="h-[30%] relative w-full overflow-hidden bg-[#0f380f]/5">
                               
-                              {/* Hit Line (Bottom Segment) */}
                               <div className="absolute top-0 bottom-0 w-[2px] bg-[#0f380f] z-30 opacity-70" style={{ left: `${HIT_LINE_PERCENT}%` }}>
-                                   {/* Bottom Marker */}
                                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#0f380f]"></div>
                               </div>
                               
-                              {/* Hit Box Marker (Vertically Centered at 40% for visual balance) */}
+                              {/* Hit Box */}
                               <div className="absolute top-[40%] -translate-y-1/2 w-8 h-8 border-4 border-[#0f380f] z-20" 
                                    style={{ left: `${HIT_LINE_PERCENT}%`, marginLeft: '-16px' }}>
                               </div>
 
-                              {/* Scrolling Notes (Vertically Centered at 40%) */}
+                              {/* Scrolling Notes */}
                               {visibleTargets.map((t, i) => (
                                   <div 
                                       key={`t-${i}`}
@@ -659,7 +658,7 @@ function App() {
                                       `}
                                       style={{
                                           left: `${HIT_LINE_PERCENT + (t.offset * BEAT_WIDTH_PERCENT)}%`,
-                                          marginLeft: '-12px' // Center anchor
+                                          marginLeft: '-12px'
                                       }}
                                   />
                               ))}
@@ -667,7 +666,7 @@ function App() {
 
                       </div>
 
-                      {/* GAME OVER (Overlay Layer) */}
+                      {/* GAME OVER */}
                       {gameOver && (
                           <div className="absolute inset-0 bg-[#8bac0f] z-[999] flex flex-col items-center justify-center p-8 font-pixel text-[#0f380f]">
                               <div className="text-4xl mb-6 font-bold">GAME OVER</div>
@@ -684,24 +683,24 @@ function App() {
                   </div>
               </div>
 
-              {/* --- CONTROL DECK --- */}
-              <div className="w-full flex items-start justify-between gap-6 px-4">
+              {/* --- CONTROL DECK (Compact h-20) --- */}
+              <div className="w-full flex items-start justify-between gap-4 px-2">
                   {/* Left: Config */}
-                  <div className="flex-1 h-24 panel-box p-3 flex flex-col justify-between">
+                  <div className="flex-1 h-20 panel-box p-3 flex flex-col justify-between">
                       <span className="panel-label">CONFIG</span>
-                      <div>
-                          <div className="font-pixel text-[10px] text-white/40 mb-1">LEVEL</div>
-                          <div className="flex gap-2">
+                      <div className="flex gap-2 items-center">
+                          <span className="font-pixel text-[8px] text-white/40">LVL</span>
+                          <div className="flex gap-1 flex-1">
                               {[1, 2, 3].map(lvl => (
-                                  <button key={lvl} onClick={() => !isPlaying && setDifficulty(lvl)} className={`flex-1 h-6 rounded text-xs font-pixel font-bold btn-level ${difficulty === lvl ? 'active' : ''}`}>
+                                  <button key={lvl} onClick={() => !isPlaying && setDifficulty(lvl)} className={`flex-1 h-5 rounded text-[8px] font-pixel font-bold btn-level ${difficulty === lvl ? 'active' : ''}`}>
                                       {lvl}
                                   </button>
                               ))}
                           </div>
                       </div>
-                      <div className="mt-1">
-                          <div className="flex justify-between font-pixel text-[10px] text-white/40 mb-0">
-                              <span>SPEED</span>
+                      <div className="flex flex-col gap-1">
+                          <div className="flex justify-between font-pixel text-[8px] text-white/40 mb-0">
+                              <span>SPD</span>
                               <span className="text-yellow-500">{bpm}</span>
                           </div>
                           <input type="range" min="60" max="180" step="5" value={bpm} onChange={(e) => !isPlaying && setBpm(parseInt(e.target.value))} className="w-full" />
@@ -709,37 +708,35 @@ function App() {
                   </div>
 
                   {/* Center: Tap */}
-                  <div className="w-48 flex flex-col items-center justify-start shrink-0">
+                  <div className="w-40 flex flex-col items-center justify-start shrink-0">
                       <button 
                           onPointerDown={handleTap}
-                          className={`w-32 h-24 btn-arcade group flex items-center justify-center ${isSpacePressed ? 'pressed' : ''}`}
+                          className={`w-28 h-20 btn-arcade group flex items-center justify-center ${isSpacePressed ? 'pressed' : ''}`}
                           style={{ touchAction: 'none' }}
                       >
-                          <span className="font-pixel text-white/90 text-3xl tracking-widest opacity-80 group-active:translate-y-1">TAP</span>
+                          <span className="font-pixel text-white/90 text-2xl tracking-widest opacity-80 group-active:translate-y-1">TAP</span>
                       </button>
-                      <div className="mt-2 font-pixel text-[10px] text-white/20 uppercase tracking-[0.2em]">{isPlaying ? "PLAYING" : (gameOver ? "RETRY" : "START")}</div>
+                      <div className="mt-1 font-pixel text-[8px] text-white/20 uppercase tracking-[0.2em]">{isPlaying ? "PLAYING" : (gameOver ? "RETRY" : "START")}</div>
                   </div>
 
                   {/* Right: System */}
-                  <div className="flex-1 h-24 panel-box p-3 flex flex-col justify-between">
+                  <div className="flex-1 h-20 panel-box p-3 flex flex-col justify-between">
                       <span className="panel-label">SYSTEM</span>
-                      <div className="flex justify-between items-center gap-4">
-                          <button onClick={togglePause} className="flex-1 h-8 bg-[#333] border border-[#555] rounded flex items-center justify-center gap-2 hover:bg-[#444] active:bg-[#222]" disabled={!isPlaying}>
-                              <Pause size={14} className="text-white/60" />
-                              <span className="font-pixel text-[10px] text-white/60">PAUSE</span>
+                      <div className="flex justify-between items-center gap-2">
+                          <button onClick={togglePause} className="flex-1 h-6 bg-[#333] border border-[#555] rounded flex items-center justify-center gap-1 hover:bg-[#444] active:bg-[#222]" disabled={!isPlaying}>
+                              <Pause size={12} className="text-white/60" />
+                              <span className="font-pixel text-[8px] text-white/60">PAUSE</span>
                           </button>
-                          <div className="flex flex-col items-end">
-                              <span className="font-pixel text-[8px] text-white/30 mb-1">AUDIO</span>
-                              <button onClick={() => setGuideAudio(!guideAudio)} className="w-12 h-6 switch-track flex items-center px-1">
-                                  <div className={`w-4 h-4 rounded-full shadow-md switch-thumb flex items-center justify-center ${guideAudio ? 'bg-green-500 translate-x-6' : 'bg-gray-500 translate-x-0'}`}>
-                                      {guideAudio ? <Volume2 size={10} className="text-black" /> : <VolumeX size={10} className="text-black" />}
-                                  </div>
+                          <div className="flex items-center gap-1">
+                              <span className="font-pixel text-[8px] text-white/30">AUD</span>
+                              <button onClick={() => setGuideAudio(!guideAudio)} className="w-8 h-4 switch-track flex items-center px-0.5">
+                                  <div className={`w-3 h-3 rounded-full shadow-md switch-thumb flex items-center justify-center ${guideAudio ? 'bg-green-500 translate-x-4' : 'bg-gray-500 translate-x-0'}`}></div>
                               </button>
                           </div>
                       </div>
                       <button onClick={resetGame} className="w-full h-6 mt-auto flex items-center justify-center gap-2 text-red-400 hover:text-red-300 transition-colors">
                           <RotateCcw size={12} />
-                          <span className="font-pixel text-[10px]">RESET GAME</span>
+                          <span className="font-pixel text-[8px]">RESET</span>
                       </button>
                   </div>
               </div>
