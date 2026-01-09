@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Lock, Heart, Pause, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 
 /**
- * RHYTHM BOY: INFINITE ARCADE - v21.0 (Hardcore & Ultra Wide)
- * * JUDGEMENT: Significantly stricter timing windows (0.25 for Hit, 0.08 for Perfect).
- * * LAYOUT: Base resolution 1000x440. Panels compressed to h-24. Screen aspect 2.8:1.
- * * FEEDBACK: "PERFECT" text is back.
+ * RHYTHM BOY: INFINITE ARCADE - v22.0 (Visual Alignment Fix)
+ * * TRACKS: Adjusted split ratio to 65% (Top) / 35% (Bottom) to prevent note clipping.
+ * * TARGETS: Visual position raised naturally by compressing the bottom track.
+ * * UI: Refined Hit Line visibility.
  */
 
 // --- Audio Engine ---
@@ -158,7 +158,6 @@ function App() {
         const h = window.innerHeight;
         const isPortrait = h > w;
         
-        // Revised base resolution for modern phones (Wider and Shorter)
         const gameW = 1000; 
         const gameH = 440; 
         
@@ -603,16 +602,19 @@ function App() {
                       {/* MAIN GAME VIEW (DUAL TRACK) */}
                       <div className="flex-1 flex flex-col relative z-0 overflow-hidden">
                           
-                          {/* TRACK 1: PATTERNS (Top) */}
-                          <div className="h-3/5 relative border-b-2 border-[#0f380f]/30 w-full overflow-hidden">
-                              {/* 1. Hit Line (Vertical across) */}
-                              <div className="absolute top-0 bottom-0 w-[2px] bg-[#0f380f] z-30 opacity-50" style={{ left: `${HIT_LINE_PERCENT}%` }}></div>
+                          {/* TRACK 1: PATTERNS (Top - 65% Height) */}
+                          <div className="h-[65%] relative border-b-2 border-[#0f380f]/30 w-full overflow-hidden">
+                              {/* Hit Line (Top Segment) */}
+                              <div className="absolute top-0 bottom-0 w-[2px] bg-[#0f380f] z-30 opacity-70" style={{ left: `${HIT_LINE_PERCENT}%` }}>
+                                   {/* Top Marker */}
+                                   <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#0f380f]"></div>
+                              </div>
 
                               {/* Scrolling Patterns */}
                               {visiblePatterns.map((p, i) => (
                                   <div 
                                       key={`p-${i}`}
-                                      className="absolute top-1/2 -translate-y-1/2 h-full border-r border-[#0f380f]/20 flex items-center justify-center"
+                                      className="absolute top-1/2 -translate-y-1/2 h-full flex items-center justify-center"
                                       style={{
                                           left: `${HIT_LINE_PERCENT + (p.offset * BEAT_WIDTH_PERCENT)}%`,
                                           width: `${BEAT_WIDTH_PERCENT}%`,
@@ -634,18 +636,21 @@ function App() {
                               ))}
                           </div>
 
-                          {/* TRACK 2: TARGETS (Bottom) */}
-                          <div className="h-2/5 relative w-full overflow-hidden bg-[#0f380f]/5">
+                          {/* TRACK 2: TARGETS (Bottom - 35% Height) */}
+                          <div className="h-[35%] relative w-full overflow-hidden bg-[#0f380f]/5">
                               
-                              {/* 1. Hit Line (Vertical across) */}
-                              <div className="absolute top-0 bottom-0 w-[2px] bg-[#0f380f] z-30 opacity-50" style={{ left: `${HIT_LINE_PERCENT}%` }}></div>
+                              {/* Hit Line (Bottom Segment) */}
+                              <div className="absolute top-0 bottom-0 w-[2px] bg-[#0f380f] z-30 opacity-70" style={{ left: `${HIT_LINE_PERCENT}%` }}>
+                                   {/* Bottom Marker */}
+                                   <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#0f380f]"></div>
+                              </div>
                               
-                              {/* Hit Box Marker */}
+                              {/* Hit Box Marker (Hollow Square) */}
                               <div className="absolute top-1/2 -translate-y-1/2 w-8 h-8 border-4 border-[#0f380f] z-20" 
                                    style={{ left: `${HIT_LINE_PERCENT}%`, marginLeft: '-16px' }}>
                               </div>
 
-                              {/* Scrolling Notes (Hollow Squares - Scaled Up) */}
+                              {/* Scrolling Notes (Hollow Squares) */}
                               {visibleTargets.map((t, i) => (
                                   <div 
                                       key={`t-${i}`}
@@ -654,7 +659,7 @@ function App() {
                                       `}
                                       style={{
                                           left: `${HIT_LINE_PERCENT + (t.offset * BEAT_WIDTH_PERCENT)}%`,
-                                          marginLeft: '-12px', // Center anchor (half of width)
+                                          marginLeft: '-12px', // Center anchor
                                           transform: 'scale(1.2)' // Scale up notes
                                       }}
                                   />
@@ -663,7 +668,7 @@ function App() {
 
                       </div>
 
-                      {/* GAME OVER (Safe Overlay) */}
+                      {/* GAME OVER (Overlay Layer) */}
                       {gameOver && (
                           <div className="absolute inset-0 bg-[#8bac0f] z-[999] flex flex-col items-center justify-center p-8 font-pixel text-[#0f380f]">
                               <div className="text-4xl mb-6 font-bold">GAME OVER</div>
