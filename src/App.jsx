@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Lock, Heart, Pause, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 
 /**
- * RHYTHM BOY: INFINITE ARCADE - v23.0 (Visual Tweaks)
- * * ALIGNMENT: Moved top patterns UP and reduced scale to prevent clipping.
- * * ALIGNMENT: Moved bottom targets UP to align perfectly with the hit frame.
- * * UI: Compacted the Config panel so the slider fits inside the box.
+ * RHYTHM BOY: INFINITE ARCADE - v24.0 (Geometry Fix)
+ * * PATTERNS: Lifted vertically to top-[45%] to utilize empty headroom and stop clipping.
+ * * TARGETS: Forced vertical alignment to center (top-1/2) for perfect registration.
+ * * LAYOUT: Track split adjusted to 70/30 to give patterns more breathing room.
  */
 
 // --- Audio Engine ---
@@ -151,12 +151,14 @@ function App() {
   useEffect(() => { difficultyRef.current = difficulty; }, [difficulty]);
   useEffect(() => { guideAudioRef.current = guideAudio; }, [guideAudio]);
 
-  // Scale Logic
+  // Scale Logic (Ultra Wide 1000x440)
   useEffect(() => {
     const handleResize = () => {
         const w = window.innerWidth;
         const h = window.innerHeight;
         const isPortrait = h > w;
+        
+        // Revised base resolution for modern phones (Wider and Shorter)
         const gameW = 1000; 
         const gameH = 440; 
         
@@ -168,6 +170,7 @@ function App() {
             s = Math.min(w / gameW, h / gameH) * 0.95;
             rotate = 'rotate(0deg)';
         }
+        
         const container = document.getElementById('game-container');
         if (container) {
             container.style.transform = `${rotate} scale(${s})`;
@@ -600,11 +603,10 @@ function App() {
                       {/* MAIN GAME VIEW (DUAL TRACK) */}
                       <div className="flex-1 flex flex-col relative z-0 overflow-hidden">
                           
-                          {/* TRACK 1: PATTERNS (Top - 65% Height) */}
-                          <div className="h-[65%] relative border-b-2 border-[#0f380f]/30 w-full overflow-hidden">
-                              {/* Hit Line (Top Segment) */}
+                          {/* TRACK 1: PATTERNS (Top - 70% Height - Moved UP) */}
+                          <div className="h-[70%] relative border-b-2 border-[#0f380f]/30 w-full overflow-hidden">
+                              {/* Hit Line */}
                               <div className="absolute top-0 bottom-0 w-[2px] bg-[#0f380f] z-30 opacity-70" style={{ left: `${HIT_LINE_PERCENT}%` }}>
-                                   {/* Top Marker */}
                                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#0f380f]"></div>
                               </div>
 
@@ -617,16 +619,14 @@ function App() {
                                           left: `${HIT_LINE_PERCENT + (p.offset * BEAT_WIDTH_PERCENT)}%`,
                                           width: `${BEAT_WIDTH_PERCENT}%`,
                                           opacity: p.pattern.id === 'rest' ? 0.4 : 1,
-                                          transform: 'scale(1.0)' // Reset scale to 1.0
+                                          transform: 'scale(1.0)' // Reset scale to 1.0 for better fit
                                       }}
                                   >
-                                      {/* Pattern Graphic */}
                                       <div className="w-full h-full p-4 text-[#0f380f]">
                                           <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible">
                                               {p.pattern.render()}
                                           </svg>
                                       </div>
-                                      {/* Anchor Indicator */}
                                       {p.startBeat % 4 === 0 && (
                                           <div className="absolute top-1 left-1 text-[8px] text-[#0f380f] font-pixel opacity-50">1</div>
                                       )}
@@ -634,31 +634,29 @@ function App() {
                               ))}
                           </div>
 
-                          {/* TRACK 2: TARGETS (Bottom - 35% Height) */}
-                          <div className="h-[35%] relative w-full overflow-hidden bg-[#0f380f]/5">
+                          {/* TRACK 2: TARGETS (Bottom - 30% Height - Centered) */}
+                          <div className="h-[30%] relative w-full overflow-hidden bg-[#0f380f]/5">
                               
-                              {/* Hit Line (Bottom Segment) */}
+                              {/* Hit Line */}
                               <div className="absolute top-0 bottom-0 w-[2px] bg-[#0f380f] z-30 opacity-70" style={{ left: `${HIT_LINE_PERCENT}%` }}>
-                                   {/* Bottom Marker */}
                                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#0f380f]"></div>
                               </div>
                               
-                              {/* Hit Box Marker (Hollow Square) */}
-                              <div className="absolute top-[40%] -translate-y-1/2 w-8 h-8 border-4 border-[#0f380f] z-20" 
+                              {/* Hit Box Marker (Vertically Centered at 50%) */}
+                              <div className="absolute top-1/2 -translate-y-1/2 w-8 h-8 border-4 border-[#0f380f] z-20" 
                                    style={{ left: `${HIT_LINE_PERCENT}%`, marginLeft: '-16px' }}>
                               </div>
 
-                              {/* Scrolling Notes (Hollow Squares) */}
+                              {/* Scrolling Notes (Vertically Centered at 50%) */}
                               {visibleTargets.map((t, i) => (
                                   <div 
                                       key={`t-${i}`}
-                                      className={`absolute top-[40%] -translate-y-1/2 w-6 h-6 border-4 border-[#0f380f] bg-transparent
+                                      className={`absolute top-1/2 -translate-y-1/2 w-6 h-6 border-4 border-[#0f380f] bg-transparent
                                           ${t.hit ? 'opacity-0 scale-150' : t.missed ? 'opacity-30' : ''}
                                       `}
                                       style={{
                                           left: `${HIT_LINE_PERCENT + (t.offset * BEAT_WIDTH_PERCENT)}%`,
-                                          marginLeft: '-12px', // Center anchor
-                                          transform: 'scale(1.2)' // Scale up notes
+                                          marginLeft: '-12px'
                                       }}
                                   />
                               ))}
@@ -666,7 +664,7 @@ function App() {
 
                       </div>
 
-                      {/* GAME OVER (Overlay Layer) */}
+                      {/* GAME OVER */}
                       {gameOver && (
                           <div className="absolute inset-0 bg-[#8bac0f] z-[999] flex flex-col items-center justify-center p-8 font-pixel text-[#0f380f]">
                               <div className="text-4xl mb-6 font-bold">GAME OVER</div>
@@ -689,7 +687,7 @@ function App() {
                   <div className="flex-1 h-24 panel-box p-3 flex flex-col justify-between">
                       <span className="panel-label">CONFIG</span>
                       <div>
-                          <div className="font-pixel text-[10px] text-white/40 mb-0">LEVEL</div>
+                          <div className="font-pixel text-[10px] text-white/40 mb-1">LEVEL</div>
                           <div className="flex gap-2">
                               {[1, 2, 3].map(lvl => (
                                   <button key={lvl} onClick={() => !isPlaying && setDifficulty(lvl)} className={`flex-1 h-6 rounded text-xs font-pixel font-bold btn-level ${difficulty === lvl ? 'active' : ''}`}>
@@ -698,7 +696,7 @@ function App() {
                               ))}
                           </div>
                       </div>
-                      <div>
+                      <div className="mt-1">
                           <div className="flex justify-between font-pixel text-[10px] text-white/40 mb-0">
                               <span>SPEED</span>
                               <span className="text-yellow-500">{bpm}</span>
