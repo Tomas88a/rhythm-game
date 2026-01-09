@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Lock, Heart, Pause, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 
 /**
- * RHYTHM BOY: INFINITE ARCADE - v22.0 (Visual Alignment Fix)
- * * TRACKS: Adjusted split ratio to 65% (Top) / 35% (Bottom) to prevent note clipping.
- * * TARGETS: Visual position raised naturally by compressing the bottom track.
- * * UI: Refined Hit Line visibility.
+ * RHYTHM BOY: INFINITE ARCADE - v23.0 (Visual Tweaks)
+ * * ALIGNMENT: Moved top patterns UP and reduced scale to prevent clipping.
+ * * ALIGNMENT: Moved bottom targets UP to align perfectly with the hit frame.
+ * * UI: Compacted the Config panel so the slider fits inside the box.
  */
 
 // --- Audio Engine ---
@@ -151,13 +151,12 @@ function App() {
   useEffect(() => { difficultyRef.current = difficulty; }, [difficulty]);
   useEffect(() => { guideAudioRef.current = guideAudio; }, [guideAudio]);
 
-  // Scale Logic (Ultra Wide 1000x440)
+  // Scale Logic
   useEffect(() => {
     const handleResize = () => {
         const w = window.innerWidth;
         const h = window.innerHeight;
         const isPortrait = h > w;
-        
         const gameW = 1000; 
         const gameH = 440; 
         
@@ -169,7 +168,6 @@ function App() {
             s = Math.min(w / gameW, h / gameH) * 0.95;
             rotate = 'rotate(0deg)';
         }
-        
         const container = document.getElementById('game-container');
         if (container) {
             container.style.transform = `${rotate} scale(${s})`;
@@ -614,12 +612,12 @@ function App() {
                               {visiblePatterns.map((p, i) => (
                                   <div 
                                       key={`p-${i}`}
-                                      className="absolute top-1/2 -translate-y-1/2 h-full flex items-center justify-center"
+                                      className="absolute top-[45%] -translate-y-1/2 h-full flex items-center justify-center"
                                       style={{
                                           left: `${HIT_LINE_PERCENT + (p.offset * BEAT_WIDTH_PERCENT)}%`,
                                           width: `${BEAT_WIDTH_PERCENT}%`,
                                           opacity: p.pattern.id === 'rest' ? 0.4 : 1,
-                                          transform: 'scale(1.2)' // Scale up patterns
+                                          transform: 'scale(1.0)' // Reset scale to 1.0
                                       }}
                                   >
                                       {/* Pattern Graphic */}
@@ -646,7 +644,7 @@ function App() {
                               </div>
                               
                               {/* Hit Box Marker (Hollow Square) */}
-                              <div className="absolute top-1/2 -translate-y-1/2 w-8 h-8 border-4 border-[#0f380f] z-20" 
+                              <div className="absolute top-[40%] -translate-y-1/2 w-8 h-8 border-4 border-[#0f380f] z-20" 
                                    style={{ left: `${HIT_LINE_PERCENT}%`, marginLeft: '-16px' }}>
                               </div>
 
@@ -654,7 +652,7 @@ function App() {
                               {visibleTargets.map((t, i) => (
                                   <div 
                                       key={`t-${i}`}
-                                      className={`absolute top-1/2 -translate-y-1/2 w-6 h-6 border-4 border-[#0f380f] bg-transparent
+                                      className={`absolute top-[40%] -translate-y-1/2 w-6 h-6 border-4 border-[#0f380f] bg-transparent
                                           ${t.hit ? 'opacity-0 scale-150' : t.missed ? 'opacity-30' : ''}
                                       `}
                                       style={{
@@ -691,7 +689,7 @@ function App() {
                   <div className="flex-1 h-24 panel-box p-3 flex flex-col justify-between">
                       <span className="panel-label">CONFIG</span>
                       <div>
-                          <div className="font-pixel text-[10px] text-white/40 mb-2">LEVEL</div>
+                          <div className="font-pixel text-[10px] text-white/40 mb-0">LEVEL</div>
                           <div className="flex gap-2">
                               {[1, 2, 3].map(lvl => (
                                   <button key={lvl} onClick={() => !isPlaying && setDifficulty(lvl)} className={`flex-1 h-6 rounded text-xs font-pixel font-bold btn-level ${difficulty === lvl ? 'active' : ''}`}>
@@ -701,7 +699,7 @@ function App() {
                           </div>
                       </div>
                       <div>
-                          <div className="flex justify-between font-pixel text-[10px] text-white/40 mb-1">
+                          <div className="flex justify-between font-pixel text-[10px] text-white/40 mb-0">
                               <span>SPEED</span>
                               <span className="text-yellow-500">{bpm}</span>
                           </div>
