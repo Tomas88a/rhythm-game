@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Lock, Heart, Pause, RotateCcw, Volume2, VolumeX } from 'lucide-react';
+import { Lock, Heart, Pause, RotateCcw, Volume2, VolumeX, Eye, EyeOff, Play, Zap } from 'lucide-react';
 
 /**
- * RHYTHM BOY: INFINITE ARCADE - v27.0 (Start Fix & UI Clarity)
- * * CRITICAL FIX: Hardened startGame logic to ensure AudioContext resumes on user gesture.
- * * LAYOUT: Centered TAP button vertically in the bottom deck.
- * * UI: Replaced abstract Eye icon with a clear "TARGETS" toggle switch.
- * * UI: Improved label visibility.
+ * RHYTHM BOY: INFINITE ARCADE - v31.0 (Pro Deck & Visual Center)
+ * * VISUAL: Redrawn all SVGs to be visually centered (cy=50, group centered).
+ * * ALIGNMENT: Implemented 'anchorX' logic to ensure musical sync despite visual centering.
+ * * LAYOUT: "Fill-the-space" control deck. Huge buttons.
+ * * UX: Added Chinese instruction text on start.
  */
 
 // --- Audio Engine ---
@@ -17,7 +17,6 @@ class GrooveEngine {
     this.masterGain.connect(this.ctx.destination);
     this.masterGain.gain.value = 0.6;
     this.nextNoteTime = 0.0;
-    this.beatCount = 0; 
     this.isPlaying = false;
     this.tempo = 90;
     this.timerID = null;
@@ -25,11 +24,7 @@ class GrooveEngine {
     this.lookahead = 25.0;
   }
 
-  async resume() { 
-    if (this.ctx.state === 'suspended') {
-      await this.ctx.resume();
-    }
-  }
+  resume() { if (this.ctx.state === 'suspended') this.ctx.resume(); }
 
   playCountIn(time, beat) {
     const osc = this.ctx.createOscillator();
@@ -107,6 +102,7 @@ class GrooveEngine {
 
   start() {
     if (this.isPlaying) return;
+    this.resume();
     this.isPlaying = true;
     this.nextNoteTime = this.ctx.currentTime + 0.1;
   }
@@ -118,24 +114,65 @@ class GrooveEngine {
 }
 
 // --- PATTERNS ---
+// anchorX: The SVG X coordinate that corresponds to the logical "Beat 0.0"
+// This allows us to visually center the group (e.g. 8ths at 30,70) while keeping correct timing alignment
 const PATTERNS = {
-  rest: { id: 'rest', name: 'REST', difficulty: 1, timings: [], render: () => <rect x="45" y="45" width="10" height="10" fill="currentColor" opacity="0.1" /> },
-  quarter: { id: 'quarter', name: 'QTR', difficulty: 1, timings: [0], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="70" r="10" /><line x1="25" y1="70" x2="25" y2="20" strokeWidth="4" /></g> },
-  eighths: { id: 'eighths', name: '8TH', difficulty: 1, timings: [0, 0.5], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="4"><circle cx="15" cy="70" r="10" /><line x1="25" y1="70" x2="25" y2="20" /><circle cx="65" cy="70" r="10" /><line x1="75" y1="70" x2="75" y2="20" /><line x1="25" y1="20" x2="75" y2="20" strokeWidth="8" /></g> },
-  sixteenths: { id: 'sixteenths', name: '16TH', difficulty: 1, timings: [0, 0.25, 0.5, 0.75], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3">{[15, 35, 55, 75].map(x => <React.Fragment key={x}><circle cx={x} cy="70" r="6" /><line x1={x + 6} y1="70" x2={x + 6} y2="20" /></React.Fragment>)}<line x1="21" y1="20" x2="81" y2="20" strokeWidth="6" /><line x1="21" y1="32" x2="81" y2="32" strokeWidth="5" /></g> },
-  triplet: { id: 'triplet', name: 'TRIP', difficulty: 2, timings: [0, 0.333, 0.666], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="70" r="8" /><line x1="23" y1="70" x2="23" y2="20" strokeWidth="3"/><circle cx="48" cy="70" r="8" /><line x1="56" y1="70" x2="56" y2="20" strokeWidth="3"/><circle cx="81" cy="70" r="8" /><line x1="89" y1="70" x2="89" y2="20" strokeWidth="3"/><line x1="23" y1="20" x2="89" y2="20" strokeWidth="6" /><text x="50" y="15" textAnchor="middle" fontSize="16" fontWeight="bold" fill="currentColor">3</text></g> },
-  galop: { id: 'galop', name: 'GALP', difficulty: 2, timings: [0, 0.5, 0.75], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="70" r="8" /><line x1="23" y1="70" x2="23" y2="20" strokeWidth="3"/><circle cx="65" cy="70" r="8" /><line x1="73" y1="70" x2="73" y2="20" strokeWidth="3"/><circle cx="85" cy="70" r="8" /><line x1="93" y1="70" x2="93" y2="20" strokeWidth="3"/><line x1="23" y1="20" x2="93" y2="20" strokeWidth="7" /><line x1="73" y1="32" x2="93" y2="32" strokeWidth="5" /></g> },
-  revGalop: { id: 'revGalop', name: 'RGAL', difficulty: 2, timings: [0, 0.25, 0.5], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="70" r="8" /><line x1="23" y1="70" x2="23" y2="20" strokeWidth="3"/><circle cx="35" cy="70" r="8" /><line x1="43" y1="70" x2="43" y2="20" strokeWidth="3"/><circle cx="65" cy="70" r="8" /><line x1="73" y1="70" x2="73" y2="20" strokeWidth="3"/><line x1="23" y1="20" x2="73" y2="20" strokeWidth="7" /><line x1="23" y1="32" x2="43" y2="32" strokeWidth="5" /></g> },
-  sync: { id: 'sync', name: 'SYNC', difficulty: 3, timings: [0, 0.25, 0.75], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="35" cy="70" r="8" /><line x1="43" y1="70" x2="43" y2="20" strokeWidth="3"/><circle cx="75" cy="70" r="8" /><line x1="83" y1="70" x2="83" y2="20" strokeWidth="3"/><line x1="10" y1="20" x2="90" y2="20" strokeWidth="7" /><line x1="43" y1="32" x2="53" y2="32" strokeWidth="5" /><line x1="83" y1="32" x2="93" y2="32" strokeWidth="5" /></g> },
-  dotted8Sixteenth: { id: 'dotted8Sixteenth', name: 'D.8', difficulty: 3, timings: [0, 0.75], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="70" r="9" /><line x1="25" y1="70" x2="25" y2="20" strokeWidth="3"/><circle cx="35" cy="65" r="3" /> <circle cx="85" cy="70" r="9" /><line x1="95" y1="70" x2="95" y2="20" strokeWidth="3"/><line x1="25" y1="20" x2="95" y2="20" strokeWidth="7" /><line x1="85" y1="32" x2="95" y2="32" strokeWidth="5" /></g> },
-  sixteenthDotted8: { id: 'sixteenthDotted8', name: '16.D', difficulty: 3, timings: [0, 0.25], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="70" r="9" /><line x1="25" y1="70" x2="25" y2="20" strokeWidth="3"/><circle cx="35" cy="70" r="9" /><line x1="45" y1="70" x2="45" y2="20" strokeWidth="3"/><circle cx="55" cy="65" r="3" /> <line x1="25" y1="20" x2="65" y2="20" strokeWidth="7" /><line x1="40" y1="32" x2="55" y2="32" strokeWidth="5" /></g> },
+  rest: { 
+      id: 'rest', name: 'REST', difficulty: 1, timings: [], anchorX: 50, 
+      render: () => <rect x="45" y="45" width="10" height="10" fill="currentColor" opacity="0.1" /> 
+  },
+  
+  quarter: { 
+      id: 'quarter', name: 'QTR', difficulty: 1, timings: [0], anchorX: 50, 
+      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="50" cy="50" r="10" /><line x1="60" y1="50" x2="60" y2="10" strokeWidth="4" /></g> 
+  },
+  
+  eighths: { 
+      id: 'eighths', name: '8TH', difficulty: 1, timings: [0, 0.5], anchorX: 30, 
+      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="4"><circle cx="30" cy="50" r="10" /><line x1="40" y1="50" x2="40" y2="10" /><circle cx="70" cy="50" r="10" /><line x1="80" y1="50" x2="80" y2="10" /><line x1="40" y1="10" x2="80" y2="10" strokeWidth="8" /></g> 
+  },
+  
+  sixteenths: { 
+      id: 'sixteenths', name: '16TH', difficulty: 1, timings: [0, 0.25, 0.5, 0.75], anchorX: 20, 
+      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3">{[20, 40, 60, 80].map(x => <React.Fragment key={x}><circle cx={x} cy="50" r="6" /><line x1={x + 6} y1="50" x2={x + 6} y2="10" /></React.Fragment>)}<line x1="26" y1="10" x2="86" y2="10" strokeWidth="6" /><line x1="26" y1="22" x2="86" y2="22" strokeWidth="5" /></g> 
+  },
+  
+  triplet: { 
+      id: 'triplet', name: 'TRIP', difficulty: 2, timings: [0, 0.333, 0.666], anchorX: 20, 
+      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="20" cy="50" r="8" /><line x1="28" y1="50" x2="28" y2="10" strokeWidth="3"/><circle cx="50" cy="50" r="8" /><line x1="58" y1="50" x2="58" y2="10" strokeWidth="3"/><circle cx="80" cy="50" r="8" /><line x1="88" y1="50" x2="88" y2="10" strokeWidth="3"/><line x1="28" y1="10" x2="88" y2="10" strokeWidth="6" /><text x="54" y="85" textAnchor="middle" fontSize="16" fontWeight="bold" fill="currentColor">3</text></g> 
+  },
+  
+  galop: { 
+      id: 'galop', name: 'GALP', difficulty: 2, timings: [0, 0.5, 0.75], anchorX: 20, 
+      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="20" cy="50" r="8" /><line x1="28" y1="50" x2="28" y2="10" strokeWidth="3"/><circle cx="60" cy="50" r="8" /><line x1="68" y1="50" x2="68" y2="10" strokeWidth="3"/><circle cx="80" cy="50" r="8" /><line x1="88" y1="50" x2="88" y2="10" strokeWidth="3"/><line x1="28" y1="10" x2="88" y2="10" strokeWidth="7" /><line x1="68" y1="22" x2="88" y2="22" strokeWidth="5" /></g> 
+  },
+  
+  revGalop: { 
+      id: 'revGalop', name: 'RGAL', difficulty: 2, timings: [0, 0.25, 0.5], anchorX: 20, 
+      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="20" cy="50" r="8" /><line x1="28" y1="50" x2="28" y2="10" strokeWidth="3"/><circle cx="40" cy="50" r="8" /><line x1="48" y1="50" x2="48" y2="10" strokeWidth="3"/><circle cx="80" cy="50" r="8" /><line x1="88" y1="50" x2="88" y2="10" strokeWidth="3"/><line x1="28" y1="10" x2="88" y2="10" strokeWidth="7" /><line x1="28" y1="22" x2="48" y2="22" strokeWidth="5" /></g> 
+  },
+  
+  sync: { 
+      id: 'sync', name: 'SYNC', difficulty: 3, timings: [0, 0.25, 0.75], anchorX: 20, // First note is at 0.25 offset, visually at 40. 40 - (0.25*80) = 20.
+      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="40" cy="50" r="8" /><line x1="48" y1="50" x2="48" y2="10" strokeWidth="3"/><circle cx="80" cy="50" r="8" /><line x1="88" y1="50" x2="88" y2="10" strokeWidth="3"/><line x1="20" y1="10" x2="88" y2="10" strokeWidth="7" /><line x1="48" y1="22" x2="58" y2="22" strokeWidth="5" /><line x1="88" y1="22" x2="98" y2="22" strokeWidth="5" /></g> 
+  },
+  
+  dotted8Sixteenth: { 
+      id: 'dotted8Sixteenth', name: 'D.8', difficulty: 3, timings: [0, 0.75], anchorX: 20, 
+      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="20" cy="50" r="9" /><line x1="30" y1="50" x2="30" y2="10" strokeWidth="3"/><circle cx="40" cy="45" r="3" /> <circle cx="80" cy="50" r="9" /><line x1="90" y1="50" x2="90" y2="10" strokeWidth="3"/><line x1="30" y1="10" x2="90" y2="10" strokeWidth="7" /><line x1="80" y1="22" x2="90" y2="22" strokeWidth="5" /></g> 
+  },
+  
+  sixteenthDotted8: { 
+      id: 'sixteenthDotted8', name: '16.D', difficulty: 3, timings: [0, 0.25], anchorX: 20, 
+      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="20" cy="50" r="9" /><line x1="30" y1="50" x2="30" y2="10" strokeWidth="3"/><circle cx="80" cy="50" r="9" /><line x1="90" y1="50" x2="90" y2="10" strokeWidth="3"/><circle cx="100" cy="45" r="3" /> <line x1="30" y1="10" x2="90" y2="10" strokeWidth="7" /><line x1="30" y1="22" x2="45" y2="22" strokeWidth="5" /></g> 
+  },
 };
 
 function App() {
   const [bpm, setBpm] = useState(85);
   const [difficulty, setDifficulty] = useState(1);
   const [guideAudio, setGuideAudio] = useState(true);
-  const [showTargets, setShowTargets] = useState(true); // Toggle for Hollow Squares
+  const [showTargets, setShowTargets] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [hp, setHp] = useState(100);
   const [score, setScore] = useState(0);
@@ -145,6 +182,7 @@ function App() {
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [activeBeat, setActiveBeat] = useState(-1);
   const [scale, setScale] = useState(1);
+  const [currentPattern, setCurrentPattern] = useState(null);
   const [feedback, setFeedback] = useState({ text: "READY", type: "neutral" });
   
   const [visiblePatterns, setVisiblePatterns] = useState([]);
@@ -156,6 +194,7 @@ function App() {
   const patternQueueRef = useRef([]); 
   const lastGenBeatRef = useRef(-1); 
   const startTimeRef = useRef(0);
+  const pausedAtRef = useRef(0);
   const timerIDRef = useRef(null);
   const animRef = useRef(null);
   const lastTapRef = useRef(0);
@@ -168,7 +207,7 @@ function App() {
   useEffect(() => { difficultyRef.current = difficulty; }, [difficulty]);
   useEffect(() => { guideAudioRef.current = guideAudio; }, [guideAudio]);
 
-  // Scale Logic (Compact 380px height)
+  // Scale Logic
   useEffect(() => {
     const handleResize = () => {
         const w = window.innerWidth;
@@ -214,7 +253,9 @@ function App() {
     };
   }, []);
 
-  useEffect(() => { if(engineRef.current) engineRef.current.tempo = bpm; }, [bpm]);
+  // Sync Bpm 
+  const bpmRef = useRef(bpm);
+  useEffect(() => { bpmRef.current = bpm; }, [bpm]);
 
   // --- LOGIC ---
 
@@ -246,7 +287,6 @@ function App() {
           let pattern;
 
           if (absBeat < 0) {
-              // Count-in
               pattern = PATTERNS['rest']; 
           } else {
               if (absBeat % 4 === 0) {
@@ -284,26 +324,21 @@ function App() {
 
       const currentAbsBeat = (ctx.currentTime - startTimeRef.current) / secondsPerBeat;
 
-      // Buffer
       if (lastGenBeatRef.current < currentAbsBeat + 8) {
           generateChunk();
       }
 
-      // Play
       noteQueueRef.current.forEach(note => {
           if (note.played) return;
           const noteTime = startTimeRef.current + (note.absBeat * secondsPerBeat);
           if (noteTime < ctx.currentTime + scheduleAheadTime) {
-              
               if (note.absBeat % 1 === 0) {
                   dev.playClick(noteTime, note.absBeat % 4 === 0);
               }
-
               if (guideAudioRef.current) {
                   if (note.type === 'kick') dev.playKick(noteTime);
                   else dev.playSnare(noteTime);
               }
-              
               note.played = true;
           }
       });
@@ -317,10 +352,8 @@ function App() {
       const secondsPerBeat = 60.0 / bpmRef.current;
       const currentAbsBeat = (ctx.currentTime - startTimeRef.current) / secondsPerBeat;
 
-      // Count-In Visual Feedback
       if (currentAbsBeat < 0) {
           const count = Math.ceil(Math.abs(currentAbsBeat));
-          // Show 4, 3, 2, 1
           if (count <= 4 && count > 0) {
              if (feedback.text !== String(count)) setFeedback({ text: String(count), type: "neutral" });
           }
@@ -328,7 +361,6 @@ function App() {
            setFeedback({ text: "GO!", type: "good" });
       }
 
-      // Update Active Pattern
       const activePat = patternQueueRef.current.find(p => 
           currentAbsBeat >= p.startBeat && currentAbsBeat < p.startBeat + 1
       );
@@ -340,17 +372,18 @@ function App() {
           setActiveBeat(-1);
       }
 
-      // Check Misses
-      if (!gameOver) {
-          noteQueueRef.current.forEach(note => {
-              if (!note.missed && !note.hit && currentAbsBeat > note.absBeat + 0.25) { 
-                  note.missed = true;
-                  triggerFeedback("MISS", "bad");
-              }
-          });
+      if (gameOver) {
+          animRef.current = requestAnimationFrame(visualLoop);
+          return;
       }
 
-      // Prune Old
+      noteQueueRef.current.forEach(note => {
+          if (!note.missed && !note.hit && currentAbsBeat > note.absBeat + 0.25) { 
+              note.missed = true;
+              triggerFeedback("MISS", "bad");
+          }
+      });
+
       if (noteQueueRef.current.length > 50) {
           const idx = noteQueueRef.current.findIndex(n => n.absBeat > currentAbsBeat - 2);
           if (idx > 0) noteQueueRef.current = noteQueueRef.current.slice(idx);
@@ -360,7 +393,6 @@ function App() {
           if (idx > 0) patternQueueRef.current = patternQueueRef.current.slice(idx);
       }
 
-      // Render Queues
       const visible = noteQueueRef.current.filter(n => 
           n.absBeat > currentAbsBeat - 2 && n.absBeat < currentAbsBeat + 6
       ).map(n => ({
@@ -380,7 +412,7 @@ function App() {
       if (!gameOver) {
           animRef.current = requestAnimationFrame(visualLoop);
       }
-  }, [gameOver, feedback.text]); // Dependencies
+  }, [gameOver, feedback.text]); 
 
   useEffect(() => {
       if (isPlaying) {
@@ -451,7 +483,7 @@ function App() {
       } else {
           if (currentAbsBeat > 0) triggerFeedback("BAD", "bad");
       }
-  }, [isPlaying, gameOver, combo]);
+  }, [isPlaying, gameOver, bpm, combo]);
 
   const resetGame = () => {
       if (engineRef.current) engineRef.current.stop();
@@ -471,7 +503,6 @@ function App() {
   const startGame = async () => {
       if (!engineRef.current) return;
       if (engineRef.current.ctx.state === 'suspended') await engineRef.current.ctx.resume();
-      
       resetGame();
       
       const spb = 60.0 / bpmRef.current;
@@ -479,13 +510,12 @@ function App() {
       
       startTimeRef.current = engineRef.current.ctx.currentTime + countInDuration + 0.1;
       
-      // Schedule count-ins now
       const now = engineRef.current.ctx.currentTime + 0.1;
       for(let i=0; i<4; i++) {
           engineRef.current.playCountIn(now + (i * spb), i);
       }
       
-      lastGenBeatRef.current = -5; // Start generation from -4
+      lastGenBeatRef.current = -5; 
       generateChunk(); 
       generateChunk(); 
       
@@ -494,13 +524,38 @@ function App() {
 
   const togglePause = () => {
       if (!isPlaying) return;
-      if (engineRef.current) engineRef.current.stop();
+      if (engineRef.current) {
+          engineRef.current.stop();
+          pausedAtRef.current = engineRef.current.ctx.currentTime;
+      }
       setIsPlaying(false);
       setFeedback({ text: "PAUSED", type: "neutral" });
   };
+  
+  const resumeGame = async () => {
+      if (engineRef.current) {
+          await engineRef.current.ctx.resume();
+          const now = engineRef.current.ctx.currentTime;
+          const timePaused = now - pausedAtRef.current;
+          startTimeRef.current += timePaused;
+          setIsPlaying(true);
+      }
+  };
+
+  const handleMainAction = (e) => {
+      if (isPlaying) {
+          handleTap(e);
+      } else {
+          if (patternQueueRef.current.length > 0 && !gameOver) {
+              resumeGame();
+          } else {
+              handleTap(e);
+          }
+      }
+  };
 
   useEffect(() => {
-      const handleKeyDown = (e) => { if (e.code === 'Space') { e.preventDefault(); setIsSpacePressed(true); handleTap(); } };
+      const handleKeyDown = (e) => { if (e.code === 'Space') { e.preventDefault(); setIsSpacePressed(true); handleMainAction(); } };
       const handleKeyUp = (e) => { if (e.code === 'Space') { setIsSpacePressed(false); } };
       window.addEventListener('keydown', handleKeyDown);
       window.addEventListener('keyup', handleKeyUp);
@@ -508,9 +563,8 @@ function App() {
           window.removeEventListener('keydown', handleKeyDown);
           window.removeEventListener('keyup', handleKeyUp);
       };
-  }, [handleTap]);
+  }, [handleMainAction]);
 
-  // Load scores
   useEffect(() => {
       if (gameOver && score > 0) {
          setHighScores(prev => {
@@ -522,7 +576,6 @@ function App() {
       }
   }, [gameOver]);
 
-  // Constants
   const HIT_LINE_PERCENT = 20; 
   const BEAT_WIDTH_PERCENT = 18; 
 
@@ -537,7 +590,7 @@ function App() {
           transform: `scale(${scale})`, 
           transformOrigin: 'center center',
           width: '1000px', 
-          height: '380px', // Compressed height
+          height: '380px', 
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -545,7 +598,11 @@ function App() {
       }} id="game-container">
           <style>{`
             @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=Zpix&display=swap'); /* Fallback for Chinese pixel if available, else system */
+            
             .font-pixel { font-family: 'Press Start 2P', monospace; }
+            .font-chinese { font-family: 'Zpix', 'Press Start 2P', monospace; }
+            
             .lcd-bg { background-color: #8bac0f; color: #0f380f; }
             .lcd-grid {
                 background-image: linear-gradient(#0f380f11 1px, transparent 1px),
@@ -600,7 +657,7 @@ function App() {
             .switch-thumb { transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1); }
             input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
             input[type=range]::-webkit-slider-thumb {
-                -webkit-appearance: none; height: 16px; width: 24px; border-radius: 4px; background: #666; border: 2px solid #222; box-shadow: 0 2px 4px rgba(0,0,0,0.5); margin-top: -6px; cursor: grab;
+                -webkit-appearance: none; height: 24px; width: 32px; border-radius: 4px; background: #666; border: 2px solid #222; box-shadow: 0 2px 4px rgba(0,0,0,0.5); margin-top: -10px; cursor: grab;
             }
             input[type=range]::-webkit-slider-runnable-track {
                 width: 100%; height: 4px; background: #111; border-radius: 2px; border: 1px solid #444;
@@ -641,22 +698,31 @@ function App() {
                            </div>
                       </div>
 
-                      {/* MAIN GAME VIEW (DUAL TRACK) */}
+                      {/* MAIN GAME VIEW */}
                       <div className="flex-1 flex flex-col relative z-0 overflow-hidden">
                           
-                          {/* TRACK 1: PATTERNS (Top - 70% Height - Moved UP to 30%) */}
-                          <div className="h-[70%] relative border-b-2 border-[#0f380f]/30 w-full overflow-hidden">
+                          {/* Chinese Text Overlay (Only in READY state) */}
+                          {!isPlaying && !gameOver && (
+                              <div className="absolute inset-0 flex items-center justify-center z-40 pointer-events-none">
+                                  <div className="text-[#0f380f] font-chinese text-sm md:text-base animate-pulse opacity-80 text-center leading-loose">
+                                      跟着节拍器<br/>打击卡片上的节奏型
+                                  </div>
+                              </div>
+                          )}
+
+                          {/* TRACK 1: PATTERNS (Top - 65% Height) */}
+                          <div className="h-[65%] relative border-b-2 border-[#0f380f]/30 w-full overflow-hidden">
                               <div className="absolute top-0 bottom-0 w-[2px] bg-[#0f380f] z-30 opacity-70" style={{ left: `${HIT_LINE_PERCENT}%` }}>
                                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#0f380f]"></div>
                               </div>
 
-                              {/* Scrolling Patterns (Cards with gap) */}
+                              {/* Scrolling Patterns (Cards with Border) */}
                               {visiblePatterns.map((p, i) => (
                                   <div 
                                       key={`p-${i}`}
-                                      className="absolute top-[30%] -translate-y-1/2 h-full flex items-center justify-center"
+                                      className="absolute top-[15%] -translate-y-1/2 h-full flex items-center justify-center"
                                       style={{
-                                          left: `${HIT_LINE_PERCENT + (p.offset * BEAT_WIDTH_PERCENT)}%`,
+                                          left: `${HIT_LINE_PERCENT + (p.offset * BEAT_WIDTH_PERCENT) - (p.pattern.anchorX / 100 * BEAT_WIDTH_PERCENT)}%`,
                                           width: `${BEAT_WIDTH_PERCENT}%`,
                                           opacity: p.pattern.id === 'rest' ? 0.4 : 1,
                                           transform: 'scale(1.0)'
@@ -678,15 +744,15 @@ function App() {
                               ))}
                           </div>
 
-                          {/* TRACK 2: TARGETS (Bottom - 30% Height - Centered at 40%) */}
-                          <div className="h-[30%] relative w-full overflow-hidden bg-[#0f380f]/5">
+                          {/* TRACK 2: TARGETS (Bottom - 35% Height) */}
+                          <div className="h-[35%] relative w-full overflow-hidden bg-[#0f380f]/5">
                               
                               <div className="absolute top-0 bottom-0 w-[2px] bg-[#0f380f] z-30 opacity-70" style={{ left: `${HIT_LINE_PERCENT}%` }}>
                                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#0f380f]"></div>
                               </div>
                               
                               {/* Hit Box */}
-                              <div className="absolute top-[40%] -translate-y-1/2 w-8 h-8 border-4 border-[#0f380f] z-20" 
+                              <div className="absolute top-[45%] -translate-y-1/2 w-8 h-8 border-4 border-[#0f380f] z-20" 
                                    style={{ left: `${HIT_LINE_PERCENT}%`, marginLeft: '-16px' }}>
                               </div>
 
@@ -694,7 +760,7 @@ function App() {
                               {visibleTargets.map((t, i) => (
                                   <div 
                                       key={`t-${i}`}
-                                      className={`absolute top-[40%] -translate-y-1/2 w-6 h-6 border-4 border-[#0f380f] bg-transparent
+                                      className={`absolute top-[45%] -translate-y-1/2 w-6 h-6 border-4 border-[#0f380f] bg-transparent
                                           ${t.hit ? 'opacity-0 scale-150' : t.missed ? 'opacity-30' : ''}
                                           ${!showTargets && !t.missed && !t.hit ? 'opacity-0' : ''}
                                       `}
@@ -725,78 +791,65 @@ function App() {
                   </div>
               </div>
 
-              {/* --- CONTROL DECK --- */}
-              <div className="w-full flex items-center justify-between gap-4 px-2">
+              {/* --- CONTROL DECK (FULL FILL) --- */}
+              <div className="w-full flex items-center justify-between gap-6 px-2">
                   
-                  {/* Left: Config & Settings */}
-                  <div className="flex-1 h-20 panel-box p-3 flex flex-col justify-between">
+                  {/* Left: Settings */}
+                  <div className="flex-1 h-20 bg-[#262626] border-2 border-[#404040] rounded-xl p-3 grid grid-cols-2 gap-4 relative shadow-inner">
                       <span className="panel-label">SETTINGS</span>
-                      
-                      {/* Top Row: Level & Audio */}
-                      <div className="flex justify-between items-center">
-                          <div className="flex gap-1 items-center">
-                              <span className="font-pixel text-[8px] text-white/40">LVL</span>
-                              <div className="flex gap-1">
-                                  {[1, 2, 3].map(lvl => (
-                                      <button key={lvl} onClick={() => !isPlaying && setDifficulty(lvl)} className={`w-5 h-5 rounded text-[8px] font-pixel font-bold btn-level ${difficulty === lvl ? 'active' : ''}`}>
-                                          {lvl}
-                                      </button>
-                                  ))}
-                              </div>
-                          </div>
-                          
-                          <div className="flex items-center gap-1">
-                              <button onClick={() => setGuideAudio(!guideAudio)} className="w-8 h-4 switch-track flex items-center px-0.5">
-                                  <div className={`w-3 h-3 rounded-full shadow-md switch-thumb flex items-center justify-center ${guideAudio ? 'bg-green-500 translate-x-4' : 'bg-gray-500 translate-x-0'}`}>
-                                  </div>
-                              </button>
-                              <span className="font-pixel text-[8px] text-white/30">AUD</span>
+                      <div className="flex flex-col justify-center gap-1">
+                          <span className="font-pixel text-[8px] text-white/40 mb-1">LEVEL</span>
+                          <div className="flex gap-1 h-full">
+                              {[1, 2, 3].map(lvl => (
+                                  <button key={lvl} onClick={() => !isPlaying && setDifficulty(lvl)} className={`flex-1 h-8 rounded text-sm font-pixel font-bold btn-level ${difficulty === lvl ? 'active' : ''}`}>
+                                      {lvl}
+                                  </button>
+                              ))}
                           </div>
                       </div>
-
-                      {/* Bottom Row: Speed */}
-                      <div className="flex items-center gap-2">
-                          <span className="font-pixel text-[8px] text-white/40 w-6">SPD</span>
-                          <input type="range" min="60" max="180" step="5" value={bpm} onChange={(e) => !isPlaying && setBpm(parseInt(e.target.value))} className="flex-1" />
-                          <span className="font-pixel text-[8px] text-yellow-500 w-6 text-right">{bpm}</span>
+                      <div className="flex flex-col justify-center gap-1">
+                           <div className="flex justify-between font-pixel text-[8px] text-white/40">
+                              <span>SPEED</span>
+                              <span className="text-yellow-500">{bpm}</span>
+                          </div>
+                          <input type="range" min="60" max="180" step="5" value={bpm} onChange={(e) => !isPlaying && setBpm(parseInt(e.target.value))} className="w-full h-8" />
                       </div>
                   </div>
 
-                  {/* Right: Actions (Big Tap & Buttons) */}
-                  <div className="flex-1 h-20 flex items-center justify-end gap-4 pl-2">
-                      
-                      {/* System Column (Pause, Reset, Targets Toggle) */}
-                      <div className="flex flex-col gap-1 w-20">
-                           <div className="flex gap-1">
-                               <button onClick={togglePause} className="flex-1 h-6 bg-[#333] border border-[#555] rounded flex items-center justify-center gap-1 hover:bg-[#444] active:bg-[#222]" disabled={!isPlaying}>
-                                  <Pause size={10} className="text-white/60" />
-                               </button>
-                               <button onClick={resetGame} className="flex-1 h-6 flex items-center justify-center gap-1 text-red-400 hover:text-red-300">
-                                  <RotateCcw size={10} />
-                               </button>
-                           </div>
-                           
-                           {/* Targets Toggle Button */}
-                           <button 
-                                onClick={() => setShowTargets(!showTargets)}
-                                className={`w-full h-6 rounded border border-[#555] flex items-center justify-center gap-1 transition-all ${showTargets ? 'bg-[#333]' : 'bg-[#111]'}`}
-                           >
-                                {showTargets ? <Eye size={10} className="text-green-400"/> : <EyeOff size={10} className="text-gray-500"/>}
-                                <span className="font-pixel text-[6px] text-white/50">TARGETS</span>
-                           </button>
-                      </div>
+                  {/* Center: Tap (Centered) */}
+                  <div className="w-32 flex flex-col items-center justify-center shrink-0">
+                      <button 
+                          onPointerDown={handleTap}
+                          className={`w-28 h-20 btn-arcade group flex items-center justify-center ${isSpacePressed ? 'pressed' : ''}`}
+                          style={{ touchAction: 'none' }}
+                      >
+                          <span className="font-pixel text-white/90 text-2xl tracking-widest opacity-80 group-active:translate-y-1">TAP</span>
+                      </button>
+                  </div>
 
-                      {/* Giant Tap Button */}
-                      <div className="flex flex-col items-center">
-                          <button 
-                              onPointerDown={handleTap}
-                              className={`w-24 h-20 btn-arcade group flex items-center justify-center ${isSpacePressed ? 'pressed' : ''}`}
-                              style={{ touchAction: 'none' }}
-                          >
-                              <span className="font-pixel text-white/90 text-2xl tracking-widest opacity-80 group-active:translate-y-1">TAP</span>
-                          </button>
-                      </div>
+                  {/* Right: System */}
+                  <div className="flex-1 h-20 bg-[#262626] border-2 border-[#404040] rounded-xl p-2 grid grid-cols-2 grid-rows-2 gap-2 relative shadow-inner">
+                      <span className="panel-label">SYSTEM</span>
                       
+                      <button onClick={() => setGuideAudio(!guideAudio)} className={`rounded border flex items-center justify-center gap-2 transition-all ${guideAudio ? 'bg-[#333] border-green-500' : 'bg-[#111] border-[#444]'}`}>
+                           <Volume2 size={14} className={guideAudio ? "text-green-400" : "text-gray-500"} />
+                           <span className="font-pixel text-[8px] text-white/50">AUD</span>
+                      </button>
+
+                      <button onClick={() => setShowTargets(!showTargets)} className={`rounded border flex items-center justify-center gap-2 transition-all ${showTargets ? 'bg-[#333] border-green-500' : 'bg-[#111] border-[#444]'}`}>
+                           {showTargets ? <Eye size={14} className="text-green-400"/> : <EyeOff size={14} className="text-gray-500"/>}
+                           <span className="font-pixel text-[8px] text-white/50">TGT</span>
+                      </button>
+
+                      <button onClick={togglePause} className="bg-[#333] border border-[#555] rounded flex items-center justify-center gap-2 hover:bg-[#444] active:bg-[#222]" disabled={!isPlaying}>
+                          <Pause size={14} className="text-white/60" />
+                          <span className="font-pixel text-[8px] text-white/60">PAUSE</span>
+                      </button>
+
+                      <button onClick={resetGame} className="flex items-center justify-center gap-2 text-red-400 hover:text-red-300 border border-transparent hover:border-red-900/30 rounded">
+                          <RotateCcw size={14} />
+                          <span className="font-pixel text-[8px]">RESET</span>
+                      </button>
                   </div>
 
               </div>
