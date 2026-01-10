@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Lock, Heart, Pause, RotateCcw, Volume2, VolumeX, Eye, EyeOff, Zap } from 'lucide-react';
+import { Lock, Heart, Pause, RotateCcw, Volume2, VolumeX, Eye, EyeOff } from 'lucide-react';
 
 /**
- * RHYTHM BOY: INFINITE ARCADE - v29.0 (Perfect Spacing & No Clipping)
- * * SPACING: Removed 'anchorX'. Used fixed grid math: Width 16%, Step 18% -> Guaranteed 2% gap.
- * * CLIPPING: Added 'overflow-visible' to pattern cards so notes on edges aren't cut off.
- * * ALIGNMENT: Redrew all SVGs to standard 0-100 grid. Bottom targets align 1:1 with top notes.
- * * LAYOUT: Full-width control deck.
+ * RHYTHM BOY: INFINITE ARCADE - v26.7 (Fix & Features)
+ * * FIXED: Visual rendering bug where 'left' was undefined (calculated in JSX now).
+ * * FIXED: Missing 'playCountIn' method in GrooveEngine.
+ * * FEATURE: Added Chinese instruction text on start.
+ * * FEATURE: Clear "TARGETS" toggle button.
+ * * FEATURE: 4-beat Count-in sequence.
  */
 
 // --- Audio Engine ---
@@ -17,7 +18,6 @@ class GrooveEngine {
     this.masterGain.connect(this.ctx.destination);
     this.masterGain.gain.value = 0.6;
     this.nextNoteTime = 0.0;
-    this.beatCount = 0; 
     this.isPlaying = false;
     this.tempo = 90;
     this.timerID = null;
@@ -27,10 +27,12 @@ class GrooveEngine {
 
   resume() { if (this.ctx.state === 'suspended') this.ctx.resume(); }
 
+  // Added missing Count-in method
   playCountIn(time, beat) {
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = 'square';
+    // 4th beat (GO!) is higher pitch
     osc.frequency.setValueAtTime(beat === 3 ? 1500 : 800, time);
     gain.gain.setValueAtTime(0.3, time);
     gain.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
@@ -115,65 +117,24 @@ class GrooveEngine {
 }
 
 // --- PATTERNS ---
-// Note: We use x coordinates that represent percentage (0-100) of the beat.
-// 10 = 0.0, 35 = 0.25, 60 = 0.5, 85 = 0.75 (approx with visual padding)
 const PATTERNS = {
-  rest: { 
-      id: 'rest', name: 'REST', difficulty: 1, timings: [], 
-      render: () => <rect x="45" y="45" width="10" height="10" fill="currentColor" opacity="0.1" /> 
-  },
-  
-  quarter: { 
-      id: 'quarter', name: 'QTR', difficulty: 1, timings: [0], 
-      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="50" r="10" /><line x1="25" y1="50" x2="25" y2="10" strokeWidth="4" /></g> 
-  },
-  
-  eighths: { 
-      id: 'eighths', name: '8TH', difficulty: 1, timings: [0, 0.5], 
-      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="4"><circle cx="15" cy="50" r="10" /><line x1="25" y1="50" x2="25" y2="10" /><circle cx="65" cy="50" r="10" /><line x1="75" y1="50" x2="75" y2="10" /><line x1="25" y1="10" x2="75" y2="10" strokeWidth="8" /></g> 
-  },
-  
-  sixteenths: { 
-      id: 'sixteenths', name: '16TH', difficulty: 1, timings: [0, 0.25, 0.5, 0.75], 
-      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3">{[15, 35, 55, 75].map(x => <React.Fragment key={x}><circle cx={x} cy="50" r="6" /><line x1={x + 6} y1="50" x2={x + 6} y2="10" /></React.Fragment>)}<line x1="21" y1="10" x2="81" y2="10" strokeWidth="6" /><line x1="21" y1="22" x2="81" y2="22" strokeWidth="5" /></g> 
-  },
-  
-  triplet: { 
-      id: 'triplet', name: 'TRIP', difficulty: 2, timings: [0, 0.333, 0.666], 
-      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="50" r="8" /><line x1="23" y1="50" x2="23" y2="10" strokeWidth="3"/><circle cx="48" cy="50" r="8" /><line x1="56" y1="50" x2="56" y2="10" strokeWidth="3"/><circle cx="81" cy="50" r="8" /><line x1="89" y1="50" x2="89" y2="10" strokeWidth="3"/><line x1="23" y1="10" x2="89" y2="10" strokeWidth="6" /><text x="50" y="85" textAnchor="middle" fontSize="16" fontWeight="bold" fill="currentColor">3</text></g> 
-  },
-  
-  galop: { 
-      id: 'galop', name: 'GALP', difficulty: 2, timings: [0, 0.5, 0.75], 
-      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="50" r="8" /><line x1="23" y1="50" x2="23" y2="10" strokeWidth="3"/><circle cx="65" cy="50" r="8" /><line x1="73" y1="50" x2="73" y2="10" strokeWidth="3"/><circle cx="85" cy="50" r="8" /><line x1="93" y1="50" x2="93" y2="10" strokeWidth="3"/><line x1="23" y1="10" x2="93" y2="10" strokeWidth="7" /><line x1="73" y1="22" x2="93" y2="22" strokeWidth="5" /></g> 
-  },
-  
-  revGalop: { 
-      id: 'revGalop', name: 'RGAL', difficulty: 2, timings: [0, 0.25, 0.5], 
-      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="50" r="8" /><line x1="23" y1="50" x2="23" y2="10" strokeWidth="3"/><circle cx="35" cy="50" r="8" /><line x1="43" y1="50" x2="43" y2="10" strokeWidth="3"/><circle cx="65" cy="50" r="8" /><line x1="73" y1="50" x2="73" y2="10" strokeWidth="3"/><line x1="23" y1="10" x2="73" y2="10" strokeWidth="7" /><line x1="23" y1="22" x2="43" y2="22" strokeWidth="5" /></g> 
-  },
-  
-  sync: { 
-      id: 'sync', name: 'SYNC', difficulty: 3, timings: [0, 0.25, 0.75], 
-      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="35" cy="50" r="8" /><line x1="43" y1="50" x2="43" y2="10" strokeWidth="3"/><circle cx="75" cy="50" r="8" /><line x1="83" y1="50" x2="83" y2="10" strokeWidth="3"/><line x1="10" y1="10" x2="90" y2="10" strokeWidth="7" /><line x1="43" y1="22" x2="53" y2="22" strokeWidth="5" /><line x1="83" y1="22" x2="93" y2="22" strokeWidth="5" /></g> 
-  },
-  
-  dotted8Sixteenth: { 
-      id: 'dotted8Sixteenth', name: 'D.8', difficulty: 3, timings: [0, 0.75], 
-      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="50" r="9" /><line x1="25" y1="50" x2="25" y2="10" strokeWidth="3"/><circle cx="35" cy="45" r="3" /> <circle cx="85" cy="50" r="9" /><line x1="95" y1="50" x2="95" y2="10" strokeWidth="3"/><line x1="25" y1="10" x2="95" y2="10" strokeWidth="7" /><line x1="85" y1="22" x2="95" y2="22" strokeWidth="5" /></g> 
-  },
-  
-  sixteenthDotted8: { 
-      id: 'sixteenthDotted8', name: '16.D', difficulty: 3, timings: [0, 0.25], 
-      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="50" r="9" /><line x1="25" y1="50" x2="25" y2="10" strokeWidth="3"/><circle cx="80" cy="50" r="9" /><line x1="90" y1="50" x2="90" y2="10" strokeWidth="3"/><circle cx="100" cy="45" r="3" /> <line x1="25" y1="10" x2="90" y2="10" strokeWidth="7" /><line x1="25" y1="22" x2="40" y2="22" strokeWidth="5" /></g> 
-  },
+  rest: { id: 'rest', name: 'REST', difficulty: 1, timings: [], render: () => <rect x="45" y="45" width="10" height="10" fill="currentColor" opacity="0.1" /> },
+  quarter: { id: 'quarter', name: 'QTR', difficulty: 1, timings: [0], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="50" cy="70" r="10" /><line x1="60" y1="70" x2="60" y2="20" strokeWidth="4" /></g> },
+  eighths: { id: 'eighths', name: '8TH', difficulty: 1, timings: [0, 0.5], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="4"><circle cx="30" cy="70" r="10" /><line x1="40" y1="70" x2="40" y2="20" /><circle cx="70" cy="70" r="10" /><line x1="80" y1="70" x2="80" y2="20" /><line x1="40" y1="20" x2="80" y2="20" strokeWidth="8" /></g> },
+  sixteenths: { id: 'sixteenths', name: '16TH', difficulty: 1, timings: [0, 0.25, 0.5, 0.75], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3">{[20, 40, 60, 80].map(x => <React.Fragment key={x}><circle cx={x} cy="70" r="6" /><line x1={x + 6} y1="70" x2={x + 6} y2="20" /></React.Fragment>)}<line x1="26" y1="20" x2="86" y2="20" strokeWidth="6" /><line x1="26" y1="32" x2="86" y2="32" strokeWidth="5" /></g> },
+  triplet: { id: 'triplet', name: 'TRIP', difficulty: 2, timings: [0, 0.333, 0.666], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="25" cy="70" r="8" /><line x1="33" y1="70" x2="33" y2="20" strokeWidth="3"/><circle cx="50" cy="70" r="8" /><line x1="59" y1="70" x2="59" y2="20" strokeWidth="3"/><circle cx="75" cy="70" r="8" /><line x1="84" y1="70" x2="84" y2="20" strokeWidth="3"/><line x1="34" y1="20" x2="84" y2="20" strokeWidth="7" /><text x="59" y="15" textAnchor="middle" fontSize="18" fontWeight="bold" fill="currentColor">3</text></g> },
+  galop: { id: 'galop', name: 'GALP', difficulty: 2, timings: [0, 0.5, 0.75], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="30" cy="70" r="8" /><line x1="39" y1="70" x2="39" y2="20" strokeWidth="3"/><circle cx="60" cy="70" r="8" /><line x1="69" y1="70" x2="69" y2="20" strokeWidth="3"/><circle cx="80" cy="70" r="8" /><line x1="89" y1="70" x2="89" y2="20" strokeWidth="3"/><line x1="39" y1="20" x2="89" y2="20" strokeWidth="7" /><line x1="69" y1="32" x2="89" y2="32" strokeWidth="5" /></g> },
+  revGalop: { id: 'revGalop', name: 'RGAL', difficulty: 2, timings: [0, 0.25, 0.5], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="20" cy="70" r="8" /><line x1="29" y1="70" x2="29" y2="20" strokeWidth="3"/><circle cx="40" cy="70" r="8" /><line x1="49" y1="70" x2="49" y2="20" strokeWidth="3"/><circle cx="70" cy="70" r="8" /><line x1="79" y1="70" x2="79" y2="20" strokeWidth="3"/><line x1="29" y1="20" x2="79" y2="20" strokeWidth="7" /><line x1="29" y1="32" x2="49" y2="32" strokeWidth="6" /></g> },
+  sync: { id: 'sync', name: 'SYNC', difficulty: 3, timings: [0, 0.25, 0.75], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="20" cy="70" r="8" /><line x1="28" y1="70" x2="28" y2="20" strokeWidth="3"/><circle cx="50" cy="70" r="8" /><line x1="58" y1="70" x2="58" y2="20" strokeWidth="3"/><circle cx="80" cy="70" r="8" /><line x1="88" y1="70" x2="88" y2="20" strokeWidth="3"/><line x1="28" y1="20" x2="88" y2="20" strokeWidth="7" /><line x1="28" y1="32" x2="38" y2="32" strokeWidth="6" /><line x1="78" y1="32" x2="88" y2="32" strokeWidth="6" /></g> },
+  dotted8Sixteenth: { id: 'dotted8Sixteenth', name: 'D.8', difficulty: 3, timings: [0, 0.75], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="30" cy="70" r="9" /><line x1="40" y1="70" x2="40" y2="20" strokeWidth="3"/><circle cx="50" cy="65" r="3" /> <circle cx="70" cy="70" r="9" /><line x1="80" y1="70" x2="80" y2="20" strokeWidth="3"/><line x1="40" y1="20" x2="80" y2="20" strokeWidth="7" /><line x1="70" y1="32" x2="80" y2="32" strokeWidth="5" /></g> },
+  sixteenthDotted8: { id: 'sixteenthDotted8', name: '16.D', difficulty: 3, timings: [0, 0.25], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="30" cy="70" r="9" /><line x1="40" y1="70" x2="40" y2="20" strokeWidth="3"/><circle cx="70" cy="70" r="9" /><line x1="80" y1="70" x2="80" y2="20" strokeWidth="3"/><circle cx="90" cy="65" r="3" /> <line x1="40" y1="20" x2="80" y2="20" strokeWidth="7" /><line x1="40" y1="32" x2="55" y2="32" strokeWidth="5" /></g> },
 };
 
 function App() {
   const [bpm, setBpm] = useState(85);
   const [difficulty, setDifficulty] = useState(1);
   const [guideAudio, setGuideAudio] = useState(true);
-  const [showTargets, setShowTargets] = useState(true);
+  const [showTargets, setShowTargets] = useState(true); // Toggle targets
   const [isPlaying, setIsPlaying] = useState(false);
   const [hp, setHp] = useState(100);
   const [score, setScore] = useState(0);
@@ -183,13 +144,11 @@ function App() {
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [activeBeat, setActiveBeat] = useState(-1);
   const [scale, setScale] = useState(1);
-  const [currentPattern, setCurrentPattern] = useState(null);
   const [feedback, setFeedback] = useState({ text: "READY", type: "neutral" });
   
   const [visiblePatterns, setVisiblePatterns] = useState([]);
   const [visibleTargets, setVisibleTargets] = useState([]);
 
-  // Refs
   const engineRef = useRef(null);
   const noteQueueRef = useRef([]); 
   const patternQueueRef = useRef([]); 
@@ -259,7 +218,6 @@ function App() {
   useEffect(() => { bpmRef.current = bpm; }, [bpm]);
 
   // --- LOGIC ---
-
   const generateChunk = () => {
       const currentDiff = difficultyRef.current;
       const startBeat = lastGenBeatRef.current + 1;
@@ -267,9 +225,8 @@ function App() {
       const getWeightedPattern = (diff) => {
           const allKeys = Object.keys(PATTERNS).filter(k => k !== 'rest');
           let pool = [];
-          if (diff === 1) {
-              pool = allKeys.filter(k => PATTERNS[k].difficulty === 1);
-          } else if (diff === 2) {
+          if (diff === 1) pool = allKeys.filter(k => PATTERNS[k].difficulty === 1);
+          else if (diff === 2) {
               const basic = allKeys.filter(k => PATTERNS[k].difficulty === 1);
               const medium = allKeys.filter(k => PATTERNS[k].difficulty === 2);
               pool = [...basic, ...medium, ...medium, ...medium]; 
@@ -290,11 +247,8 @@ function App() {
           if (absBeat < 0) {
               pattern = PATTERNS['rest']; 
           } else {
-              if (absBeat % 4 === 0) {
-                  pattern = PATTERNS['eighths']; 
-              } else {
-                  pattern = getWeightedPattern(currentDiff);
-              }
+              if (absBeat % 4 === 0) pattern = PATTERNS['eighths']; 
+              else pattern = getWeightedPattern(currentDiff);
           }
 
           patternQueueRef.current.push({ startBeat: absBeat, pattern });
@@ -322,20 +276,15 @@ function App() {
       const secondsPerBeat = 60.0 / bpmRef.current;
       const lookahead = 25.0; 
       const scheduleAheadTime = 0.1; 
-
       const currentAbsBeat = (ctx.currentTime - startTimeRef.current) / secondsPerBeat;
 
-      if (lastGenBeatRef.current < currentAbsBeat + 8) {
-          generateChunk();
-      }
+      if (lastGenBeatRef.current < currentAbsBeat + 8) generateChunk();
 
       noteQueueRef.current.forEach(note => {
           if (note.played) return;
           const noteTime = startTimeRef.current + (note.absBeat * secondsPerBeat);
           if (noteTime < ctx.currentTime + scheduleAheadTime) {
-              if (note.absBeat % 1 === 0) {
-                  dev.playClick(noteTime, note.absBeat % 4 === 0);
-              }
+              if (note.absBeat % 1 === 0) dev.playClick(noteTime, note.absBeat % 4 === 0);
               if (guideAudioRef.current) {
                   if (note.type === 'kick') dev.playKick(noteTime);
                   else dev.playSnare(noteTime);
@@ -343,7 +292,6 @@ function App() {
               note.played = true;
           }
       });
-
       timerIDRef.current = setTimeout(scheduleAudio, lookahead);
   }, []);
 
@@ -353,6 +301,7 @@ function App() {
       const secondsPerBeat = 60.0 / bpmRef.current;
       const currentAbsBeat = (ctx.currentTime - startTimeRef.current) / secondsPerBeat;
 
+      // Count-In Visual Feedback
       if (currentAbsBeat < 0) {
           const count = Math.ceil(Math.abs(currentAbsBeat));
           if (count <= 4 && count > 0) {
@@ -362,29 +311,17 @@ function App() {
            setFeedback({ text: "GO!", type: "good" });
       }
 
-      const activePat = patternQueueRef.current.find(p => 
-          currentAbsBeat >= p.startBeat && currentAbsBeat < p.startBeat + 1
-      );
-      if (activePat && activePat.pattern.id !== 'rest') {
-          setCurrentPattern(activePat.pattern);
-          setActiveBeat(activePat.startBeat % 4);
-      } else {
-          setCurrentPattern(null);
-          setActiveBeat(-1);
+      // Miss Check
+      if (!gameOver) {
+          noteQueueRef.current.forEach(note => {
+              if (!note.missed && !note.hit && currentAbsBeat > note.absBeat + 0.3) { 
+                  note.missed = true;
+                  triggerFeedback("MISS", "bad");
+              }
+          });
       }
 
-      if (gameOver) {
-          animRef.current = requestAnimationFrame(visualLoop);
-          return;
-      }
-
-      noteQueueRef.current.forEach(note => {
-          if (!note.missed && !note.hit && currentAbsBeat > note.absBeat + 0.25) { 
-              note.missed = true;
-              triggerFeedback("MISS", "bad");
-          }
-      });
-
+      // Prune
       if (noteQueueRef.current.length > 50) {
           const idx = noteQueueRef.current.findIndex(n => n.absBeat > currentAbsBeat - 2);
           if (idx > 0) noteQueueRef.current = noteQueueRef.current.slice(idx);
@@ -394,26 +331,27 @@ function App() {
           if (idx > 0) patternQueueRef.current = patternQueueRef.current.slice(idx);
       }
 
-      // Render Queues - USING 18% STEP FOR BOTH
-      const visible = noteQueueRef.current.filter(n => 
-          n.absBeat > currentAbsBeat - 2 && n.absBeat < currentAbsBeat + 6
-      ).map(n => ({
-          ...n,
-          offset: n.absBeat - currentAbsBeat
-      }));
-      setVisibleTargets(visible);
+      // Render - Fix the Left Position Calculation
+      const HIT_LINE_PERCENT = 20;
+      const BEAT_WIDTH_PERCENT = 18;
 
       const visiblePats = patternQueueRef.current.filter(p => 
           p.startBeat > currentAbsBeat - 2 && p.startBeat < currentAbsBeat + 6
       ).map(p => ({
           ...p,
-          offset: p.startBeat - currentAbsBeat
+          left: HIT_LINE_PERCENT + (p.startBeat - currentAbsBeat) * BEAT_WIDTH_PERCENT
       }));
       setVisiblePatterns(visiblePats);
 
-      if (!gameOver) {
-          animRef.current = requestAnimationFrame(visualLoop);
-      }
+      const visibleNotes = noteQueueRef.current.filter(n => 
+          n.absBeat > currentAbsBeat - 2 && n.absBeat < currentAbsBeat + 6
+      ).map(n => ({
+          ...n,
+          left: HIT_LINE_PERCENT + (n.absBeat - currentAbsBeat) * BEAT_WIDTH_PERCENT
+      }));
+      setVisibleTargets(visibleNotes);
+
+      if (!gameOver) animRef.current = requestAnimationFrame(visualLoop);
   }, [gameOver, feedback.text]); 
 
   useEffect(() => {
@@ -504,12 +442,11 @@ function App() {
 
   const startGame = async () => {
       if (!engineRef.current) return;
-      if (engineRef.current.ctx.state === 'suspended') await engineRef.current.ctx.resume();
+      await engineRef.current.resume();
       resetGame();
       
       const spb = 60.0 / bpmRef.current;
       const countInDuration = 4 * spb;
-      
       startTimeRef.current = engineRef.current.ctx.currentTime + countInDuration + 0.1;
       
       const now = engineRef.current.ctx.currentTime + 0.1;
@@ -520,7 +457,6 @@ function App() {
       lastGenBeatRef.current = -5; 
       generateChunk(); 
       generateChunk(); 
-      
       setIsPlaying(true);
   };
 
@@ -545,13 +481,14 @@ function App() {
   };
 
   const handleMainAction = (e) => {
+      if(e) e.preventDefault();
       if (isPlaying) {
           handleTap(e);
       } else {
           if (patternQueueRef.current.length > 0 && !gameOver) {
               resumeGame();
           } else {
-              handleTap(e);
+              startGame();
           }
       }
   };
@@ -660,7 +597,7 @@ function App() {
             .switch-thumb { transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1); }
             input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
             input[type=range]::-webkit-slider-thumb {
-                -webkit-appearance: none; height: 24px; width: 32px; border-radius: 4px; background: #666; border: 2px solid #222; box-shadow: 0 2px 4px rgba(0,0,0,0.5); margin-top: -10px; cursor: grab;
+                -webkit-appearance: none; height: 16px; width: 24px; border-radius: 4px; background: #666; border: 2px solid #222; box-shadow: 0 2px 4px rgba(0,0,0,0.5); margin-top: -6px; cursor: grab;
             }
             input[type=range]::-webkit-slider-runnable-track {
                 width: 100%; height: 4px; background: #111; border-radius: 2px; border: 1px solid #444;
@@ -705,9 +642,9 @@ function App() {
                       <div className="flex-1 flex flex-col relative z-0 overflow-hidden">
                           
                           {/* Chinese Text Overlay (Only in READY state) */}
-                          {!isPlaying && !gameOver && (
+                          {!isPlaying && !gameOver && feedback.text === "READY" && (
                               <div className="absolute inset-0 flex items-center justify-center z-40 pointer-events-none">
-                                  <div className="text-[#0f380f] font-chinese text-sm md:text-base animate-pulse opacity-80 text-center leading-loose">
+                                  <div className="text-[#0f380f] font-chinese text-xl md:text-2xl animate-pulse opacity-80 text-center leading-loose tracking-widest">
                                       跟着节拍器<br/>打击卡片上的节奏型
                                   </div>
                               </div>
@@ -719,27 +656,25 @@ function App() {
                                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#0f380f]"></div>
                               </div>
 
-                              {/* Scrolling Patterns (Cards with Border) */}
+                              {/* Scrolling Patterns (Cards with gap) */}
                               {visiblePatterns.map((p, i) => (
                                   <div 
                                       key={`p-${i}`}
-                                      className="absolute top-[15%] -translate-y-1/2 h-full flex items-center justify-center"
+                                      className="absolute top-[20%] -translate-y-1/2 h-full flex items-center justify-center"
                                       style={{
-                                          left: `${HIT_LINE_PERCENT + (p.offset * BEAT_WIDTH_PERCENT)}%`,
-                                          width: `${BEAT_WIDTH_PERCENT - 2}%`, // Leave 2% Gap
+                                          left: `${p.left}%`,
+                                          width: `16%`, // Fixed visual width 16% (gap 2%)
                                           opacity: p.pattern.id === 'rest' ? 0.4 : 1,
-                                          transform: 'scale(1.0)',
-                                          overflow: 'visible' // Allow SVG overflow
+                                          transform: 'scale(1.0)'
                                       }}
                                   >
                                       {/* Card Box (Thicker Border) */}
-                                      <div className="w-full h-[80%] border-4 border-[#0f380f] rounded-sm bg-[#8bac0f] shadow-sm flex items-center justify-center relative overflow-visible">
+                                      <div className="w-[90%] h-[80%] border-4 border-[#0f380f] rounded-sm bg-[#8bac0f] shadow-sm flex items-center justify-center p-2 relative">
                                           <div className="text-[#0f380f] w-full h-full overflow-visible">
                                               <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible">
                                                   {p.pattern.render()}
                                               </svg>
                                           </div>
-                                          {/* Anchor Indicator */}
                                           {p.startBeat % 4 === 0 && (
                                               <div className="absolute top-1 left-1 text-[8px] text-[#0f380f] font-pixel opacity-50">1</div>
                                           )}
@@ -769,7 +704,7 @@ function App() {
                                           ${!showTargets && !t.missed && !t.hit ? 'opacity-0' : ''}
                                       `}
                                       style={{
-                                          left: `${HIT_LINE_PERCENT + (t.offset * BEAT_WIDTH_PERCENT)}%`,
+                                          left: `${t.left}%`,
                                           marginLeft: '-12px'
                                       }}
                                   />
@@ -842,7 +777,7 @@ function App() {
 
                       <button onClick={() => setShowTargets(!showTargets)} className={`rounded border flex items-center justify-center gap-2 transition-all ${showTargets ? 'bg-[#333] border-green-500' : 'bg-[#111] border-[#444]'}`}>
                            {showTargets ? <Eye size={14} className="text-green-400"/> : <EyeOff size={14} className="text-gray-500"/>}
-                           <span className="font-pixel text-[8px] text-white/50">TGT</span>
+                           <span className="font-pixel text-[8px] text-white/50">TARGETS</span>
                       </button>
 
                       <button onClick={togglePause} className="bg-[#333] border border-[#555] rounded flex items-center justify-center gap-2 hover:bg-[#444] active:bg-[#222]" disabled={!isPlaying}>
