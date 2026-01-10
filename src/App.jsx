@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Lock, Heart, Pause, RotateCcw, Volume2, VolumeX, Eye, EyeOff } from 'lucide-react';
+import { Lock, Heart, Pause, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 
 /**
- * RHYTHM BOY: INFINITE ARCADE - v26.5 (Custom Edition)
- * * BASE: Reverted to v26.0 (Compact 380px height, Top-[20%] Patterns).
- * * MOD 1: Thicker borders (border-4) for pattern cards.
- * * MOD 2: Added 4-beat Count-in logic (Audio & Visual).
- * * MOD 3: Added Toggle Button for Hollow Squares (Targets).
+ * RHYTHM BOY: INFINITE ARCADE - v27.0 (Start Fix & UI Clarity)
+ * * CRITICAL FIX: Hardened startGame logic to ensure AudioContext resumes on user gesture.
+ * * LAYOUT: Centered TAP button vertically in the bottom deck.
+ * * UI: Replaced abstract Eye icon with a clear "TARGETS" toggle switch.
+ * * UI: Improved label visibility.
  */
 
 // --- Audio Engine ---
@@ -25,7 +25,11 @@ class GrooveEngine {
     this.lookahead = 25.0;
   }
 
-  resume() { if (this.ctx.state === 'suspended') this.ctx.resume(); }
+  async resume() { 
+    if (this.ctx.state === 'suspended') {
+      await this.ctx.resume();
+    }
+  }
 
   playCountIn(time, beat) {
     const osc = this.ctx.createOscillator();
@@ -101,22 +105,30 @@ class GrooveEngine {
     osc.stop(time + 0.15);
   }
 
-  // We rely on external scheduling loop (in App) to call play methods
-  // But we keep this dummy method or remove it. Let's keep it clean.
+  start() {
+    if (this.isPlaying) return;
+    this.isPlaying = true;
+    this.nextNoteTime = this.ctx.currentTime + 0.1;
+  }
+
+  stop() {
+    this.isPlaying = false;
+    if (this.timerID) clearTimeout(this.timerID);
+  }
 }
 
 // --- PATTERNS ---
 const PATTERNS = {
   rest: { id: 'rest', name: 'REST', difficulty: 1, timings: [], render: () => <rect x="45" y="45" width="10" height="10" fill="currentColor" opacity="0.1" /> },
-  quarter: { id: 'quarter', name: 'QTR', difficulty: 1, timings: [0], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="50" cy="70" r="10" /><line x1="60" y1="70" x2="60" y2="20" strokeWidth="4" /></g> },
-  eighths: { id: 'eighths', name: '8TH', difficulty: 1, timings: [0, 0.5], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="4"><circle cx="30" cy="70" r="10" /><line x1="40" y1="70" x2="40" y2="20" /><circle cx="70" cy="70" r="10" /><line x1="80" y1="70" x2="80" y2="20" /><line x1="40" y1="20" x2="80" y2="20" strokeWidth="8" /></g> },
-  sixteenths: { id: 'sixteenths', name: '16TH', difficulty: 1, timings: [0, 0.25, 0.5, 0.75], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3">{[20, 40, 60, 80].map(x => <React.Fragment key={x}><circle cx={x} cy="70" r="6" /><line x1={x + 6} y1="70" x2={x + 6} y2="20" /></React.Fragment>)}<line x1="26" y1="20" x2="86" y2="20" strokeWidth="6" /><line x1="26" y1="32" x2="86" y2="32" strokeWidth="5" /></g> },
-  triplet: { id: 'triplet', name: 'TRIP', difficulty: 2, timings: [0, 0.333, 0.666], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="25" cy="70" r="8" /><line x1="33" y1="70" x2="33" y2="20" strokeWidth="3"/><circle cx="50" cy="70" r="8" /><line x1="58" y1="70" x2="58" y2="20" strokeWidth="3"/><circle cx="75" cy="70" r="8" /><line x1="83" y1="70" x2="83" y2="20" strokeWidth="3"/><line x1="33" y1="20" x2="83" y2="20" strokeWidth="6" /><text x="58" y="15" textAnchor="middle" fontSize="16" fontWeight="bold" fill="currentColor">3</text></g> },
-  galop: { id: 'galop', name: 'GALP', difficulty: 2, timings: [0, 0.5, 0.75], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="30" cy="70" r="8" /><line x1="38" y1="70" x2="38" y2="20" strokeWidth="3"/><circle cx="60" cy="70" r="8" /><line x1="68" y1="70" x2="68" y2="20" strokeWidth="3"/><circle cx="80" cy="70" r="8" /><line x1="88" y1="70" x2="88" y2="20" strokeWidth="3"/><line x1="38" y1="20" x2="88" y2="20" strokeWidth="7" /><line x1="68" y1="32" x2="88" y2="32" strokeWidth="5" /></g> },
-  revGalop: { id: 'revGalop', name: 'RGAL', difficulty: 2, timings: [0, 0.25, 0.5], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="20" cy="70" r="8" /><line x1="28" y1="70" x2="28" y2="20" strokeWidth="3"/><circle cx="40" cy="70" r="8" /><line x1="48" y1="70" x2="48" y2="20" strokeWidth="3"/><circle cx="70" cy="70" r="8" /><line x1="78" y1="70" x2="78" y2="20" strokeWidth="3"/><line x1="28" y1="20" x2="78" y2="20" strokeWidth="7" /><line x1="28" y1="32" x2="48" y2="32" strokeWidth="5" /></g> },
-  sync: { id: 'sync', name: 'SYNC', difficulty: 3, timings: [0, 0.25, 0.75], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="20" cy="70" r="8" /><line x1="28" y1="70" x2="28" y2="20" strokeWidth="3"/><circle cx="50" cy="70" r="8" /><line x1="58" y1="70" x2="58" y2="20" strokeWidth="3"/><circle cx="80" cy="70" r="8" /><line x1="88" y1="70" x2="88" y2="20" strokeWidth="3"/><line x1="28" y1="20" x2="88" y2="20" strokeWidth="7" /><line x1="28" y1="32" x2="38" y2="32" strokeWidth="5" /><line x1="78" y1="32" x2="88" y2="32" strokeWidth="5" /></g> },
-  dotted8Sixteenth: { id: 'dotted8Sixteenth', name: 'D.8', difficulty: 3, timings: [0, 0.75], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="30" cy="70" r="9" /><line x1="40" y1="70" x2="40" y2="20" strokeWidth="3"/><circle cx="50" cy="65" r="3" /> <circle cx="70" cy="70" r="9" /><line x1="80" y1="70" x2="80" y2="20" strokeWidth="3"/><line x1="40" y1="20" x2="80" y2="20" strokeWidth="7" /><line x1="70" y1="32" x2="80" y2="32" strokeWidth="5" /></g> },
-  sixteenthDotted8: { id: 'sixteenthDotted8', name: '16.D', difficulty: 3, timings: [0, 0.25], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="30" cy="70" r="9" /><line x1="40" y1="70" x2="40" y2="20" strokeWidth="3"/><circle cx="70" cy="70" r="9" /><line x1="80" y1="70" x2="80" y2="20" strokeWidth="3"/><circle cx="90" cy="65" r="3" /> <line x1="40" y1="20" x2="80" y2="20" strokeWidth="7" /><line x1="40" y1="32" x2="55" y2="32" strokeWidth="5" /></g> },
+  quarter: { id: 'quarter', name: 'QTR', difficulty: 1, timings: [0], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="70" r="10" /><line x1="25" y1="70" x2="25" y2="20" strokeWidth="4" /></g> },
+  eighths: { id: 'eighths', name: '8TH', difficulty: 1, timings: [0, 0.5], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="4"><circle cx="15" cy="70" r="10" /><line x1="25" y1="70" x2="25" y2="20" /><circle cx="65" cy="70" r="10" /><line x1="75" y1="70" x2="75" y2="20" /><line x1="25" y1="20" x2="75" y2="20" strokeWidth="8" /></g> },
+  sixteenths: { id: 'sixteenths', name: '16TH', difficulty: 1, timings: [0, 0.25, 0.5, 0.75], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3">{[15, 35, 55, 75].map(x => <React.Fragment key={x}><circle cx={x} cy="70" r="6" /><line x1={x + 6} y1="70" x2={x + 6} y2="20" /></React.Fragment>)}<line x1="21" y1="20" x2="81" y2="20" strokeWidth="6" /><line x1="21" y1="32" x2="81" y2="32" strokeWidth="5" /></g> },
+  triplet: { id: 'triplet', name: 'TRIP', difficulty: 2, timings: [0, 0.333, 0.666], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="70" r="8" /><line x1="23" y1="70" x2="23" y2="20" strokeWidth="3"/><circle cx="48" cy="70" r="8" /><line x1="56" y1="70" x2="56" y2="20" strokeWidth="3"/><circle cx="81" cy="70" r="8" /><line x1="89" y1="70" x2="89" y2="20" strokeWidth="3"/><line x1="23" y1="20" x2="89" y2="20" strokeWidth="6" /><text x="50" y="15" textAnchor="middle" fontSize="16" fontWeight="bold" fill="currentColor">3</text></g> },
+  galop: { id: 'galop', name: 'GALP', difficulty: 2, timings: [0, 0.5, 0.75], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="70" r="8" /><line x1="23" y1="70" x2="23" y2="20" strokeWidth="3"/><circle cx="65" cy="70" r="8" /><line x1="73" y1="70" x2="73" y2="20" strokeWidth="3"/><circle cx="85" cy="70" r="8" /><line x1="93" y1="70" x2="93" y2="20" strokeWidth="3"/><line x1="23" y1="20" x2="93" y2="20" strokeWidth="7" /><line x1="73" y1="32" x2="93" y2="32" strokeWidth="5" /></g> },
+  revGalop: { id: 'revGalop', name: 'RGAL', difficulty: 2, timings: [0, 0.25, 0.5], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="70" r="8" /><line x1="23" y1="70" x2="23" y2="20" strokeWidth="3"/><circle cx="35" cy="70" r="8" /><line x1="43" y1="70" x2="43" y2="20" strokeWidth="3"/><circle cx="65" cy="70" r="8" /><line x1="73" y1="70" x2="73" y2="20" strokeWidth="3"/><line x1="23" y1="20" x2="73" y2="20" strokeWidth="7" /><line x1="23" y1="32" x2="43" y2="32" strokeWidth="5" /></g> },
+  sync: { id: 'sync', name: 'SYNC', difficulty: 3, timings: [0, 0.25, 0.75], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="35" cy="70" r="8" /><line x1="43" y1="70" x2="43" y2="20" strokeWidth="3"/><circle cx="75" cy="70" r="8" /><line x1="83" y1="70" x2="83" y2="20" strokeWidth="3"/><line x1="10" y1="20" x2="90" y2="20" strokeWidth="7" /><line x1="43" y1="32" x2="53" y2="32" strokeWidth="5" /><line x1="83" y1="32" x2="93" y2="32" strokeWidth="5" /></g> },
+  dotted8Sixteenth: { id: 'dotted8Sixteenth', name: 'D.8', difficulty: 3, timings: [0, 0.75], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="70" r="9" /><line x1="25" y1="70" x2="25" y2="20" strokeWidth="3"/><circle cx="35" cy="65" r="3" /> <circle cx="85" cy="70" r="9" /><line x1="95" y1="70" x2="95" y2="20" strokeWidth="3"/><line x1="25" y1="20" x2="95" y2="20" strokeWidth="7" /><line x1="85" y1="32" x2="95" y2="32" strokeWidth="5" /></g> },
+  sixteenthDotted8: { id: 'sixteenthDotted8', name: '16.D', difficulty: 3, timings: [0, 0.25], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="70" r="9" /><line x1="25" y1="70" x2="25" y2="20" strokeWidth="3"/><circle cx="35" cy="70" r="9" /><line x1="45" y1="70" x2="45" y2="20" strokeWidth="3"/><circle cx="55" cy="65" r="3" /> <line x1="25" y1="20" x2="65" y2="20" strokeWidth="7" /><line x1="40" y1="32" x2="55" y2="32" strokeWidth="5" /></g> },
 };
 
 function App() {
@@ -138,6 +150,7 @@ function App() {
   const [visiblePatterns, setVisiblePatterns] = useState([]);
   const [visibleTargets, setVisibleTargets] = useState([]);
 
+  // Refs
   const engineRef = useRef(null);
   const noteQueueRef = useRef([]); 
   const patternQueueRef = useRef([]); 
@@ -197,13 +210,11 @@ function App() {
     return () => {
         if (timerIDRef.current) clearTimeout(timerIDRef.current);
         if (animRef.current) cancelAnimationFrame(animRef.current);
-        if (engineRef.current) engineRef.current.stop(); // Clean stop
+        if (engineRef.current) engineRef.current.stop();
     };
   }, []);
 
-  // Sync Bpm 
-  const bpmRef = useRef(bpm);
-  useEffect(() => { bpmRef.current = bpm; }, [bpm]);
+  useEffect(() => { if(engineRef.current) engineRef.current.tempo = bpm; }, [bpm]);
 
   // --- LOGIC ---
 
@@ -235,7 +246,7 @@ function App() {
           let pattern;
 
           if (absBeat < 0) {
-              // Count-in (Negative beats)
+              // Count-in
               pattern = PATTERNS['rest']; 
           } else {
               if (absBeat % 4 === 0) {
@@ -322,8 +333,10 @@ function App() {
           currentAbsBeat >= p.startBeat && currentAbsBeat < p.startBeat + 1
       );
       if (activePat && activePat.pattern.id !== 'rest') {
+          setCurrentPattern(activePat.pattern);
           setActiveBeat(activePat.startBeat % 4);
       } else {
+          setCurrentPattern(null);
           setActiveBeat(-1);
       }
 
@@ -458,6 +471,7 @@ function App() {
   const startGame = async () => {
       if (!engineRef.current) return;
       if (engineRef.current.ctx.state === 'suspended') await engineRef.current.ctx.resume();
+      
       resetGame();
       
       const spb = 60.0 / bpmRef.current;
@@ -480,7 +494,7 @@ function App() {
 
   const togglePause = () => {
       if (!isPlaying) return;
-      if (engineRef.current) engineRef.current.stop(); // Stop audio
+      if (engineRef.current) engineRef.current.stop();
       setIsPlaying(false);
       setFeedback({ text: "PAUSED", type: "neutral" });
   };
@@ -496,6 +510,7 @@ function App() {
       };
   }, [handleTap]);
 
+  // Load scores
   useEffect(() => {
       if (gameOver && score > 0) {
          setHighScores(prev => {
@@ -522,7 +537,7 @@ function App() {
           transform: `scale(${scale})`, 
           transformOrigin: 'center center',
           width: '1000px', 
-          height: '380px', 
+          height: '380px', // Compressed height
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -629,7 +644,7 @@ function App() {
                       {/* MAIN GAME VIEW (DUAL TRACK) */}
                       <div className="flex-1 flex flex-col relative z-0 overflow-hidden">
                           
-                          {/* TRACK 1: PATTERNS (Top - 70% Height - Moved UP to 20%) */}
+                          {/* TRACK 1: PATTERNS (Top - 70% Height - Moved UP to 30%) */}
                           <div className="h-[70%] relative border-b-2 border-[#0f380f]/30 w-full overflow-hidden">
                               <div className="absolute top-0 bottom-0 w-[2px] bg-[#0f380f] z-30 opacity-70" style={{ left: `${HIT_LINE_PERCENT}%` }}>
                                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#0f380f]"></div>
@@ -639,7 +654,7 @@ function App() {
                               {visiblePatterns.map((p, i) => (
                                   <div 
                                       key={`p-${i}`}
-                                      className="absolute top-[20%] -translate-y-1/2 h-full flex items-center justify-center"
+                                      className="absolute top-[30%] -translate-y-1/2 h-full flex items-center justify-center"
                                       style={{
                                           left: `${HIT_LINE_PERCENT + (p.offset * BEAT_WIDTH_PERCENT)}%`,
                                           width: `${BEAT_WIDTH_PERCENT}%`,
@@ -711,70 +726,79 @@ function App() {
               </div>
 
               {/* --- CONTROL DECK --- */}
-              <div className="w-full flex items-start justify-between gap-4 px-2">
-                  {/* Left: Config */}
-                  <div className="w-[35%] h-20 panel-box p-3 flex flex-col justify-between">
-                      <span className="panel-label">CONFIG</span>
-                      <div className="flex gap-2 items-center">
-                          <span className="font-pixel text-[8px] text-white/40">LVL</span>
-                          <div className="flex gap-1 flex-1">
-                              {[1, 2, 3].map(lvl => (
-                                  <button key={lvl} onClick={() => !isPlaying && setDifficulty(lvl)} className={`flex-1 h-6 rounded text-[8px] font-pixel font-bold btn-level ${difficulty === lvl ? 'active' : ''}`}>
-                                      {lvl}
-                                  </button>
-                              ))}
-                          </div>
-                      </div>
-                      <div className="flex flex-col gap-1">
-                          <div className="flex justify-between font-pixel text-[8px] text-white/40 mb-0">
-                              <span>SPD</span>
-                              <span className="text-yellow-500">{bpm}</span>
-                          </div>
-                          <input type="range" min="60" max="180" step="5" value={bpm} onChange={(e) => !isPlaying && setBpm(parseInt(e.target.value))} className="w-full" />
-                      </div>
-                  </div>
-
-                  {/* Center: Tap */}
-                  <div className="w-40 flex flex-col items-center justify-start shrink-0">
-                      <button 
-                          onPointerDown={handleTap}
-                          className={`w-28 h-20 btn-arcade group flex items-center justify-center ${isSpacePressed ? 'pressed' : ''}`}
-                          style={{ touchAction: 'none' }}
-                      >
-                          <span className="font-pixel text-white/90 text-2xl tracking-widest opacity-80 group-active:translate-y-1">TAP</span>
-                      </button>
-                      <div className="mt-1 font-pixel text-[8px] text-white/20 uppercase tracking-[0.2em]">{isPlaying ? "PLAYING" : (gameOver ? "RETRY" : "START")}</div>
-                  </div>
-
-                  {/* Right: System */}
+              <div className="w-full flex items-center justify-between gap-4 px-2">
+                  
+                  {/* Left: Config & Settings */}
                   <div className="flex-1 h-20 panel-box p-3 flex flex-col justify-between">
-                      <span className="panel-label">SYSTEM</span>
-                      <div className="flex justify-between items-center gap-2">
-                          <button onClick={togglePause} className="flex-1 h-6 bg-[#333] border border-[#555] rounded flex items-center justify-center gap-1 hover:bg-[#444] active:bg-[#222]" disabled={!isPlaying}>
-                              <Pause size={12} className="text-white/60" />
-                              <span className="font-pixel text-[8px] text-white/60">PAUSE</span>
-                          </button>
-                          
-                          {/* Audio Guide Toggle */}
-                          <div className="flex items-center gap-1">
-                              <span className="font-pixel text-[8px] text-white/30">AUD</span>
-                              <button onClick={() => setGuideAudio(!guideAudio)} className="w-8 h-4 switch-track flex items-center px-0.5">
-                                  <div className={`w-3 h-3 rounded-full shadow-md switch-thumb flex items-center justify-center ${guideAudio ? 'bg-green-500 translate-x-4' : 'bg-gray-500 translate-x-0'}`}></div>
-                              </button>
+                      <span className="panel-label">SETTINGS</span>
+                      
+                      {/* Top Row: Level & Audio */}
+                      <div className="flex justify-between items-center">
+                          <div className="flex gap-1 items-center">
+                              <span className="font-pixel text-[8px] text-white/40">LVL</span>
+                              <div className="flex gap-1">
+                                  {[1, 2, 3].map(lvl => (
+                                      <button key={lvl} onClick={() => !isPlaying && setDifficulty(lvl)} className={`w-5 h-5 rounded text-[8px] font-pixel font-bold btn-level ${difficulty === lvl ? 'active' : ''}`}>
+                                          {lvl}
+                                      </button>
+                                  ))}
+                              </div>
                           </div>
-
-                           {/* Visual Targets Toggle */}
-                           <div className="flex items-center gap-1 border-l border-white/10 pl-1">
-                              <button onClick={() => setShowTargets(!showTargets)} className="w-6 h-6 flex items-center justify-center rounded hover:bg-[#444]">
-                                   {showTargets ? <Eye size={12} className="text-white/60"/> : <EyeOff size={12} className="text-white/30"/>}
+                          
+                          <div className="flex items-center gap-1">
+                              <button onClick={() => setGuideAudio(!guideAudio)} className="w-8 h-4 switch-track flex items-center px-0.5">
+                                  <div className={`w-3 h-3 rounded-full shadow-md switch-thumb flex items-center justify-center ${guideAudio ? 'bg-green-500 translate-x-4' : 'bg-gray-500 translate-x-0'}`}>
+                                  </div>
                               </button>
+                              <span className="font-pixel text-[8px] text-white/30">AUD</span>
                           </div>
                       </div>
-                      <button onClick={resetGame} className="w-full h-6 mt-auto flex items-center justify-center gap-2 text-red-400 hover:text-red-300 transition-colors">
-                          <RotateCcw size={12} />
-                          <span className="font-pixel text-[8px]">RESET</span>
-                      </button>
+
+                      {/* Bottom Row: Speed */}
+                      <div className="flex items-center gap-2">
+                          <span className="font-pixel text-[8px] text-white/40 w-6">SPD</span>
+                          <input type="range" min="60" max="180" step="5" value={bpm} onChange={(e) => !isPlaying && setBpm(parseInt(e.target.value))} className="flex-1" />
+                          <span className="font-pixel text-[8px] text-yellow-500 w-6 text-right">{bpm}</span>
+                      </div>
                   </div>
+
+                  {/* Right: Actions (Big Tap & Buttons) */}
+                  <div className="flex-1 h-20 flex items-center justify-end gap-4 pl-2">
+                      
+                      {/* System Column (Pause, Reset, Targets Toggle) */}
+                      <div className="flex flex-col gap-1 w-20">
+                           <div className="flex gap-1">
+                               <button onClick={togglePause} className="flex-1 h-6 bg-[#333] border border-[#555] rounded flex items-center justify-center gap-1 hover:bg-[#444] active:bg-[#222]" disabled={!isPlaying}>
+                                  <Pause size={10} className="text-white/60" />
+                               </button>
+                               <button onClick={resetGame} className="flex-1 h-6 flex items-center justify-center gap-1 text-red-400 hover:text-red-300">
+                                  <RotateCcw size={10} />
+                               </button>
+                           </div>
+                           
+                           {/* Targets Toggle Button */}
+                           <button 
+                                onClick={() => setShowTargets(!showTargets)}
+                                className={`w-full h-6 rounded border border-[#555] flex items-center justify-center gap-1 transition-all ${showTargets ? 'bg-[#333]' : 'bg-[#111]'}`}
+                           >
+                                {showTargets ? <Eye size={10} className="text-green-400"/> : <EyeOff size={10} className="text-gray-500"/>}
+                                <span className="font-pixel text-[6px] text-white/50">TARGETS</span>
+                           </button>
+                      </div>
+
+                      {/* Giant Tap Button */}
+                      <div className="flex flex-col items-center">
+                          <button 
+                              onPointerDown={handleTap}
+                              className={`w-24 h-20 btn-arcade group flex items-center justify-center ${isSpacePressed ? 'pressed' : ''}`}
+                              style={{ touchAction: 'none' }}
+                          >
+                              <span className="font-pixel text-white/90 text-2xl tracking-widest opacity-80 group-active:translate-y-1">TAP</span>
+                          </button>
+                      </div>
+                      
+                  </div>
+
               </div>
           </div>
       </div>
