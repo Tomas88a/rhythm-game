@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Lock, Heart, Pause, RotateCcw, Volume2, VolumeX, Eye, EyeOff, Play, Zap } from 'lucide-react';
+import { Lock, Heart, Pause, RotateCcw, Volume2, VolumeX, Eye, EyeOff, Zap } from 'lucide-react';
 
 /**
- * RHYTHM BOY: INFINITE ARCADE - v31.0 (Pro Deck & Visual Center)
- * * VISUAL: Redrawn all SVGs to be visually centered (cy=50, group centered).
- * * ALIGNMENT: Implemented 'anchorX' logic to ensure musical sync despite visual centering.
- * * LAYOUT: "Fill-the-space" control deck. Huge buttons.
- * * UX: Added Chinese instruction text on start.
+ * RHYTHM BOY: INFINITE ARCADE - v29.0 (Perfect Spacing & No Clipping)
+ * * SPACING: Removed 'anchorX'. Used fixed grid math: Width 16%, Step 18% -> Guaranteed 2% gap.
+ * * CLIPPING: Added 'overflow-visible' to pattern cards so notes on edges aren't cut off.
+ * * ALIGNMENT: Redrew all SVGs to standard 0-100 grid. Bottom targets align 1:1 with top notes.
+ * * LAYOUT: Full-width control deck.
  */
 
 // --- Audio Engine ---
@@ -17,6 +17,7 @@ class GrooveEngine {
     this.masterGain.connect(this.ctx.destination);
     this.masterGain.gain.value = 0.6;
     this.nextNoteTime = 0.0;
+    this.beatCount = 0; 
     this.isPlaying = false;
     this.tempo = 90;
     this.timerID = null;
@@ -114,57 +115,57 @@ class GrooveEngine {
 }
 
 // --- PATTERNS ---
-// anchorX: The SVG X coordinate that corresponds to the logical "Beat 0.0"
-// This allows us to visually center the group (e.g. 8ths at 30,70) while keeping correct timing alignment
+// Note: We use x coordinates that represent percentage (0-100) of the beat.
+// 10 = 0.0, 35 = 0.25, 60 = 0.5, 85 = 0.75 (approx with visual padding)
 const PATTERNS = {
   rest: { 
-      id: 'rest', name: 'REST', difficulty: 1, timings: [], anchorX: 50, 
+      id: 'rest', name: 'REST', difficulty: 1, timings: [], 
       render: () => <rect x="45" y="45" width="10" height="10" fill="currentColor" opacity="0.1" /> 
   },
   
   quarter: { 
-      id: 'quarter', name: 'QTR', difficulty: 1, timings: [0], anchorX: 50, 
-      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="50" cy="50" r="10" /><line x1="60" y1="50" x2="60" y2="10" strokeWidth="4" /></g> 
+      id: 'quarter', name: 'QTR', difficulty: 1, timings: [0], 
+      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="50" r="10" /><line x1="25" y1="50" x2="25" y2="10" strokeWidth="4" /></g> 
   },
   
   eighths: { 
-      id: 'eighths', name: '8TH', difficulty: 1, timings: [0, 0.5], anchorX: 30, 
-      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="4"><circle cx="30" cy="50" r="10" /><line x1="40" y1="50" x2="40" y2="10" /><circle cx="70" cy="50" r="10" /><line x1="80" y1="50" x2="80" y2="10" /><line x1="40" y1="10" x2="80" y2="10" strokeWidth="8" /></g> 
+      id: 'eighths', name: '8TH', difficulty: 1, timings: [0, 0.5], 
+      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="4"><circle cx="15" cy="50" r="10" /><line x1="25" y1="50" x2="25" y2="10" /><circle cx="65" cy="50" r="10" /><line x1="75" y1="50" x2="75" y2="10" /><line x1="25" y1="10" x2="75" y2="10" strokeWidth="8" /></g> 
   },
   
   sixteenths: { 
-      id: 'sixteenths', name: '16TH', difficulty: 1, timings: [0, 0.25, 0.5, 0.75], anchorX: 20, 
-      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3">{[20, 40, 60, 80].map(x => <React.Fragment key={x}><circle cx={x} cy="50" r="6" /><line x1={x + 6} y1="50" x2={x + 6} y2="10" /></React.Fragment>)}<line x1="26" y1="10" x2="86" y2="10" strokeWidth="6" /><line x1="26" y1="22" x2="86" y2="22" strokeWidth="5" /></g> 
+      id: 'sixteenths', name: '16TH', difficulty: 1, timings: [0, 0.25, 0.5, 0.75], 
+      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3">{[15, 35, 55, 75].map(x => <React.Fragment key={x}><circle cx={x} cy="50" r="6" /><line x1={x + 6} y1="50" x2={x + 6} y2="10" /></React.Fragment>)}<line x1="21" y1="10" x2="81" y2="10" strokeWidth="6" /><line x1="21" y1="22" x2="81" y2="22" strokeWidth="5" /></g> 
   },
   
   triplet: { 
-      id: 'triplet', name: 'TRIP', difficulty: 2, timings: [0, 0.333, 0.666], anchorX: 20, 
-      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="20" cy="50" r="8" /><line x1="28" y1="50" x2="28" y2="10" strokeWidth="3"/><circle cx="50" cy="50" r="8" /><line x1="58" y1="50" x2="58" y2="10" strokeWidth="3"/><circle cx="80" cy="50" r="8" /><line x1="88" y1="50" x2="88" y2="10" strokeWidth="3"/><line x1="28" y1="10" x2="88" y2="10" strokeWidth="6" /><text x="54" y="85" textAnchor="middle" fontSize="16" fontWeight="bold" fill="currentColor">3</text></g> 
+      id: 'triplet', name: 'TRIP', difficulty: 2, timings: [0, 0.333, 0.666], 
+      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="50" r="8" /><line x1="23" y1="50" x2="23" y2="10" strokeWidth="3"/><circle cx="48" cy="50" r="8" /><line x1="56" y1="50" x2="56" y2="10" strokeWidth="3"/><circle cx="81" cy="50" r="8" /><line x1="89" y1="50" x2="89" y2="10" strokeWidth="3"/><line x1="23" y1="10" x2="89" y2="10" strokeWidth="6" /><text x="50" y="85" textAnchor="middle" fontSize="16" fontWeight="bold" fill="currentColor">3</text></g> 
   },
   
   galop: { 
-      id: 'galop', name: 'GALP', difficulty: 2, timings: [0, 0.5, 0.75], anchorX: 20, 
-      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="20" cy="50" r="8" /><line x1="28" y1="50" x2="28" y2="10" strokeWidth="3"/><circle cx="60" cy="50" r="8" /><line x1="68" y1="50" x2="68" y2="10" strokeWidth="3"/><circle cx="80" cy="50" r="8" /><line x1="88" y1="50" x2="88" y2="10" strokeWidth="3"/><line x1="28" y1="10" x2="88" y2="10" strokeWidth="7" /><line x1="68" y1="22" x2="88" y2="22" strokeWidth="5" /></g> 
+      id: 'galop', name: 'GALP', difficulty: 2, timings: [0, 0.5, 0.75], 
+      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="50" r="8" /><line x1="23" y1="50" x2="23" y2="10" strokeWidth="3"/><circle cx="65" cy="50" r="8" /><line x1="73" y1="50" x2="73" y2="10" strokeWidth="3"/><circle cx="85" cy="50" r="8" /><line x1="93" y1="50" x2="93" y2="10" strokeWidth="3"/><line x1="23" y1="10" x2="93" y2="10" strokeWidth="7" /><line x1="73" y1="22" x2="93" y2="22" strokeWidth="5" /></g> 
   },
   
   revGalop: { 
-      id: 'revGalop', name: 'RGAL', difficulty: 2, timings: [0, 0.25, 0.5], anchorX: 20, 
-      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="20" cy="50" r="8" /><line x1="28" y1="50" x2="28" y2="10" strokeWidth="3"/><circle cx="40" cy="50" r="8" /><line x1="48" y1="50" x2="48" y2="10" strokeWidth="3"/><circle cx="80" cy="50" r="8" /><line x1="88" y1="50" x2="88" y2="10" strokeWidth="3"/><line x1="28" y1="10" x2="88" y2="10" strokeWidth="7" /><line x1="28" y1="22" x2="48" y2="22" strokeWidth="5" /></g> 
+      id: 'revGalop', name: 'RGAL', difficulty: 2, timings: [0, 0.25, 0.5], 
+      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="50" r="8" /><line x1="23" y1="50" x2="23" y2="10" strokeWidth="3"/><circle cx="35" cy="50" r="8" /><line x1="43" y1="50" x2="43" y2="10" strokeWidth="3"/><circle cx="65" cy="50" r="8" /><line x1="73" y1="50" x2="73" y2="10" strokeWidth="3"/><line x1="23" y1="10" x2="73" y2="10" strokeWidth="7" /><line x1="23" y1="22" x2="43" y2="22" strokeWidth="5" /></g> 
   },
   
   sync: { 
-      id: 'sync', name: 'SYNC', difficulty: 3, timings: [0, 0.25, 0.75], anchorX: 20, // First note is at 0.25 offset, visually at 40. 40 - (0.25*80) = 20.
-      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="40" cy="50" r="8" /><line x1="48" y1="50" x2="48" y2="10" strokeWidth="3"/><circle cx="80" cy="50" r="8" /><line x1="88" y1="50" x2="88" y2="10" strokeWidth="3"/><line x1="20" y1="10" x2="88" y2="10" strokeWidth="7" /><line x1="48" y1="22" x2="58" y2="22" strokeWidth="5" /><line x1="88" y1="22" x2="98" y2="22" strokeWidth="5" /></g> 
+      id: 'sync', name: 'SYNC', difficulty: 3, timings: [0, 0.25, 0.75], 
+      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="35" cy="50" r="8" /><line x1="43" y1="50" x2="43" y2="10" strokeWidth="3"/><circle cx="75" cy="50" r="8" /><line x1="83" y1="50" x2="83" y2="10" strokeWidth="3"/><line x1="10" y1="10" x2="90" y2="10" strokeWidth="7" /><line x1="43" y1="22" x2="53" y2="22" strokeWidth="5" /><line x1="83" y1="22" x2="93" y2="22" strokeWidth="5" /></g> 
   },
   
   dotted8Sixteenth: { 
-      id: 'dotted8Sixteenth', name: 'D.8', difficulty: 3, timings: [0, 0.75], anchorX: 20, 
-      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="20" cy="50" r="9" /><line x1="30" y1="50" x2="30" y2="10" strokeWidth="3"/><circle cx="40" cy="45" r="3" /> <circle cx="80" cy="50" r="9" /><line x1="90" y1="50" x2="90" y2="10" strokeWidth="3"/><line x1="30" y1="10" x2="90" y2="10" strokeWidth="7" /><line x1="80" y1="22" x2="90" y2="22" strokeWidth="5" /></g> 
+      id: 'dotted8Sixteenth', name: 'D.8', difficulty: 3, timings: [0, 0.75], 
+      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="50" r="9" /><line x1="25" y1="50" x2="25" y2="10" strokeWidth="3"/><circle cx="35" cy="45" r="3" /> <circle cx="85" cy="50" r="9" /><line x1="95" y1="50" x2="95" y2="10" strokeWidth="3"/><line x1="25" y1="10" x2="95" y2="10" strokeWidth="7" /><line x1="85" y1="22" x2="95" y2="22" strokeWidth="5" /></g> 
   },
   
   sixteenthDotted8: { 
-      id: 'sixteenthDotted8', name: '16.D', difficulty: 3, timings: [0, 0.25], anchorX: 20, 
-      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="20" cy="50" r="9" /><line x1="30" y1="50" x2="30" y2="10" strokeWidth="3"/><circle cx="80" cy="50" r="9" /><line x1="90" y1="50" x2="90" y2="10" strokeWidth="3"/><circle cx="100" cy="45" r="3" /> <line x1="30" y1="10" x2="90" y2="10" strokeWidth="7" /><line x1="30" y1="22" x2="45" y2="22" strokeWidth="5" /></g> 
+      id: 'sixteenthDotted8', name: '16.D', difficulty: 3, timings: [0, 0.25], 
+      render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="50" r="9" /><line x1="25" y1="50" x2="25" y2="10" strokeWidth="3"/><circle cx="80" cy="50" r="9" /><line x1="90" y1="50" x2="90" y2="10" strokeWidth="3"/><circle cx="100" cy="45" r="3" /> <line x1="25" y1="10" x2="90" y2="10" strokeWidth="7" /><line x1="25" y1="22" x2="40" y2="22" strokeWidth="5" /></g> 
   },
 };
 
@@ -393,6 +394,7 @@ function App() {
           if (idx > 0) patternQueueRef.current = patternQueueRef.current.slice(idx);
       }
 
+      // Render Queues - USING 18% STEP FOR BOTH
       const visible = noteQueueRef.current.filter(n => 
           n.absBeat > currentAbsBeat - 2 && n.absBeat < currentAbsBeat + 6
       ).map(n => ({
@@ -576,6 +578,7 @@ function App() {
       }
   }, [gameOver]);
 
+  // Constants
   const HIT_LINE_PERCENT = 20; 
   const BEAT_WIDTH_PERCENT = 18; 
 
@@ -598,7 +601,7 @@ function App() {
       }} id="game-container">
           <style>{`
             @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
-            @import url('https://fonts.googleapis.com/css2?family=Zpix&display=swap'); /* Fallback for Chinese pixel if available, else system */
+            @import url('https://fonts.googleapis.com/css2?family=Zpix&display=swap');
             
             .font-pixel { font-family: 'Press Start 2P', monospace; }
             .font-chinese { font-family: 'Zpix', 'Press Start 2P', monospace; }
@@ -722,15 +725,16 @@ function App() {
                                       key={`p-${i}`}
                                       className="absolute top-[15%] -translate-y-1/2 h-full flex items-center justify-center"
                                       style={{
-                                          left: `${HIT_LINE_PERCENT + (p.offset * BEAT_WIDTH_PERCENT) - (p.pattern.anchorX / 100 * BEAT_WIDTH_PERCENT)}%`,
-                                          width: `${BEAT_WIDTH_PERCENT}%`,
+                                          left: `${HIT_LINE_PERCENT + (p.offset * BEAT_WIDTH_PERCENT)}%`,
+                                          width: `${BEAT_WIDTH_PERCENT - 2}%`, // Leave 2% Gap
                                           opacity: p.pattern.id === 'rest' ? 0.4 : 1,
-                                          transform: 'scale(1.0)'
+                                          transform: 'scale(1.0)',
+                                          overflow: 'visible' // Allow SVG overflow
                                       }}
                                   >
                                       {/* Card Box (Thicker Border) */}
-                                      <div className="w-[90%] h-[80%] border-4 border-[#0f380f] rounded-sm bg-[#8bac0f] shadow-sm flex items-center justify-center p-2 relative">
-                                          <div className="text-[#0f380f] w-full h-full">
+                                      <div className="w-full h-[80%] border-4 border-[#0f380f] rounded-sm bg-[#8bac0f] shadow-sm flex items-center justify-center relative overflow-visible">
+                                          <div className="text-[#0f380f] w-full h-full overflow-visible">
                                               <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible">
                                                   {p.pattern.render()}
                                               </svg>
@@ -819,7 +823,7 @@ function App() {
                   {/* Center: Tap (Centered) */}
                   <div className="w-32 flex flex-col items-center justify-center shrink-0">
                       <button 
-                          onPointerDown={handleTap}
+                          onPointerDown={handleMainAction}
                           className={`w-28 h-20 btn-arcade group flex items-center justify-center ${isSpacePressed ? 'pressed' : ''}`}
                           style={{ touchAction: 'none' }}
                       >
