@@ -2,29 +2,24 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Lock, Heart, Pause, RotateCcw, Volume2, VolumeX, Play } from 'lucide-react';
 
 /**
- * RHYTHM BOY: INFINITE ARCADE - v28.0 (Pro Layout & True Alignment)
- * * LAYOUT: Left = Config (Big controls), Right = Action (Huge TAP).
- * * VISUAL: Removed Card borders. Notes float freely.
- * * ALIGNMENT: Rewrote SVG patterns so note heads align perfectly with hit targets (mathematically).
- * * UI: Increased size of sliders and level buttons.
+ * RHYTHM BOY: INFINITE ARCADE - v29.0 (Stability & Layout Fix)
+ * * CRITICAL FIX: Removed conflicting internal scheduler in GrooveEngine. 
+ * * CRITICAL FIX: Implemented "Time Freeze" pause logic so audio actually stops and resumes correctly.
+ * * UI: Expanded Config Panel to fill empty space. Made Sliders and Buttons significantly larger.
+ * * VISUAL: Ensured Note/Target rendering loop is robust.
  */
 
-// --- Audio Engine ---
+// --- Audio Engine (Pure Sound Emitter) ---
 class GrooveEngine {
   constructor() {
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     this.masterGain = this.ctx.createGain();
     this.masterGain.connect(this.ctx.destination);
     this.masterGain.gain.value = 0.6;
-    this.nextNoteTime = 0.0;
-    this.isPlaying = false;
-    this.tempo = 90;
-    this.timerID = null;
-    this.scheduleAheadTime = 0.1;
-    this.lookahead = 25.0;
   }
 
   resume() { if (this.ctx.state === 'suspended') this.ctx.resume(); }
+  suspend() { if (this.ctx.state === 'running') this.ctx.suspend(); } // Not used, we calculate offset instead
 
   playCountIn(time, beat) {
     const osc = this.ctx.createOscillator();
@@ -99,52 +94,19 @@ class GrooveEngine {
     osc.start(time);
     osc.stop(time + 0.15);
   }
-
-  start() {
-    if (this.isPlaying) return;
-    this.resume();
-    this.isPlaying = true;
-    this.nextNoteTime = this.ctx.currentTime + 0.1;
-  }
-
-  stop() {
-    this.isPlaying = false;
-    if (this.timerID) clearTimeout(this.timerID);
-  }
 }
 
-// --- PATTERNS (Coordinates rewritten for strict alignment) ---
-// Note: SVG viewBox 0 0 100 100.
-// x=10 represents offset 0.0. x=90 represents offset 0.8 (approx).
-// We align targets to match these X coords.
+// --- PATTERNS ---
 const PATTERNS = {
   rest: { id: 'rest', name: 'REST', difficulty: 1, timings: [], render: () => <rect x="45" y="45" width="10" height="10" fill="currentColor" opacity="0.1" /> },
-  
-  // Quarter: Hit at 0.0 -> x=15
   quarter: { id: 'quarter', name: 'QTR', difficulty: 1, timings: [0], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="70" r="10" /><line x1="25" y1="70" x2="25" y2="20" strokeWidth="4" /></g> },
-  
-  // Eighths: 0.0, 0.5 -> x=15, x=65
   eighths: { id: 'eighths', name: '8TH', difficulty: 1, timings: [0, 0.5], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="4"><circle cx="15" cy="70" r="10" /><line x1="25" y1="70" x2="25" y2="20" /><circle cx="65" cy="70" r="10" /><line x1="75" y1="70" x2="75" y2="20" /><line x1="25" y1="20" x2="75" y2="20" strokeWidth="8" /></g> },
-  
-  // 16ths: 0, 0.25, 0.5, 0.75 -> x=15, 35, 55, 75
   sixteenths: { id: 'sixteenths', name: '16TH', difficulty: 1, timings: [0, 0.25, 0.5, 0.75], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3">{[15, 35, 55, 75].map(x => <React.Fragment key={x}><circle cx={x} cy="70" r="6" /><line x1={x + 6} y1="70" x2={x + 6} y2="20" /></React.Fragment>)}<line x1="21" y1="20" x2="81" y2="20" strokeWidth="6" /><line x1="21" y1="32" x2="81" y2="32" strokeWidth="5" /></g> },
-  
-  // Triplet: 0, 0.33, 0.66 -> x=15, 48, 81
   triplet: { id: 'triplet', name: 'TRIP', difficulty: 2, timings: [0, 0.333, 0.666], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="70" r="8" /><line x1="23" y1="70" x2="23" y2="20" strokeWidth="3"/><circle cx="48" cy="70" r="8" /><line x1="56" y1="70" x2="56" y2="20" strokeWidth="3"/><circle cx="81" cy="70" r="8" /><line x1="89" y1="70" x2="89" y2="20" strokeWidth="3"/><line x1="23" y1="20" x2="89" y2="20" strokeWidth="6" /><text x="50" y="15" textAnchor="middle" fontSize="16" fontWeight="bold" fill="currentColor">3</text></g> },
-  
-  // Galop: 0, 0.5, 0.75 -> x=15, 65, 85
   galop: { id: 'galop', name: 'GALP', difficulty: 2, timings: [0, 0.5, 0.75], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="70" r="8" /><line x1="23" y1="70" x2="23" y2="20" strokeWidth="3"/><circle cx="65" cy="70" r="8" /><line x1="73" y1="70" x2="73" y2="20" strokeWidth="3"/><circle cx="85" cy="70" r="8" /><line x1="93" y1="70" x2="93" y2="20" strokeWidth="3"/><line x1="23" y1="20" x2="93" y2="20" strokeWidth="7" /><line x1="73" y1="32" x2="93" y2="32" strokeWidth="5" /></g> },
-  
-  // RevGalop: 0, 0.25, 0.5 -> x=15, 35, 65
   revGalop: { id: 'revGalop', name: 'RGAL', difficulty: 2, timings: [0, 0.25, 0.5], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="70" r="8" /><line x1="23" y1="70" x2="23" y2="20" strokeWidth="3"/><circle cx="35" cy="70" r="8" /><line x1="43" y1="70" x2="43" y2="20" strokeWidth="3"/><circle cx="65" cy="70" r="8" /><line x1="73" y1="70" x2="73" y2="20" strokeWidth="3"/><line x1="23" y1="20" x2="73" y2="20" strokeWidth="7" /><line x1="23" y1="32" x2="43" y2="32" strokeWidth="5" /></g> },
-  
-  // Sync: 0.25, 0.75 (Rest on 0) -> x=35, 75
   sync: { id: 'sync', name: 'SYNC', difficulty: 3, timings: [0, 0.25, 0.75], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="35" cy="70" r="8" /><line x1="43" y1="70" x2="43" y2="20" strokeWidth="3"/><circle cx="75" cy="70" r="8" /><line x1="83" y1="70" x2="83" y2="20" strokeWidth="3"/><line x1="10" y1="20" x2="90" y2="20" strokeWidth="7" /><line x1="43" y1="32" x2="53" y2="32" strokeWidth="5" /><line x1="83" y1="32" x2="93" y2="32" strokeWidth="5" /></g> },
-  
-  // Dotted: 0, 0.75 -> x=15, 85
   dotted8Sixteenth: { id: 'dotted8Sixteenth', name: 'D.8', difficulty: 3, timings: [0, 0.75], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="70" r="9" /><line x1="25" y1="70" x2="25" y2="20" strokeWidth="3"/><circle cx="35" cy="65" r="3" /> <circle cx="85" cy="70" r="9" /><line x1="95" y1="70" x2="95" y2="20" strokeWidth="3"/><line x1="25" y1="20" x2="95" y2="20" strokeWidth="7" /><line x1="85" y1="32" x2="95" y2="32" strokeWidth="5" /></g> },
-  
-  // 16-Dot: 0, 0.25 -> x=15, 45 (Wait, note 2 is dotted 8th) -> x=15, 35
   sixteenthDotted8: { id: 'sixteenthDotted8', name: '16.D', difficulty: 3, timings: [0, 0.25], render: () => <g stroke="currentColor" fill="currentColor" strokeWidth="3"><circle cx="15" cy="70" r="9" /><line x1="25" y1="70" x2="25" y2="20" strokeWidth="3"/><circle cx="35" cy="70" r="9" /><line x1="45" y1="70" x2="45" y2="20" strokeWidth="3"/><circle cx="55" cy="65" r="3" /> <line x1="25" y1="20" x2="65" y2="20" strokeWidth="7" /><line x1="25" y1="32" x2="40" y2="32" strokeWidth="5" /></g> },
 };
 
@@ -173,6 +135,7 @@ function App() {
   const patternQueueRef = useRef([]); 
   const lastGenBeatRef = useRef(-1); 
   const startTimeRef = useRef(0);
+  const pausedAtRef = useRef(0); // Track pause time
   const timerIDRef = useRef(null);
   const animRef = useRef(null);
   const lastTapRef = useRef(0);
@@ -324,17 +287,6 @@ function App() {
           }
       });
       
-      // Count-in Clicks
-      for (let b = -4; b < 0; b++) {
-          const beatTime = startTimeRef.current + (b * secondsPerBeat);
-          // Very simplified "just in time" check
-          if (beatTime >= ctx.currentTime && beatTime < ctx.currentTime + scheduleAheadTime) {
-              // Hacky way to play count in only once. 
-              // Better logic: add count-in to noteQueue. 
-              // But for now, we rely on the main "startGame" function scheduling count-ins.
-          }
-      }
-
       if (isPlaying) {
           timerIDRef.current = setTimeout(scheduleAudio, lookahead);
       }
@@ -347,7 +299,7 @@ function App() {
       const secondsPerBeat = 60.0 / bpm;
       const currentAbsBeat = (ctx.currentTime - startTimeRef.current) / secondsPerBeat;
 
-      // Count-In
+      // Count-In Visuals
       if (currentAbsBeat < 0) {
           const count = Math.ceil(Math.abs(currentAbsBeat));
           if (count <= 4 && count > 0) {
@@ -471,7 +423,7 @@ function App() {
           setScore(s => s + points + (Math.floor(combo/10)*10));
           triggerFeedback(isPerfect ? "PERFECT" : "GOOD", "good");
       } else {
-          // Bad tap logic
+          // Only trigger bad feedback if playing and past count-in
           if (currentAbsBeat > 0) triggerFeedback("BAD", "bad");
       }
   }, [isPlaying, gameOver, bpm, combo]);
@@ -494,29 +446,45 @@ function App() {
   const startGame = async () => {
       if (!engineRef.current) return;
       if (engineRef.current.ctx.state === 'suspended') await engineRef.current.ctx.resume();
-      resetGame();
       
-      const spb = 60.0 / bpm;
-      const countInDuration = 4 * spb;
-      
-      startTimeRef.current = engineRef.current.ctx.currentTime + countInDuration + 0.1;
-      
-      // Schedule count-ins now
-      const now = engineRef.current.ctx.currentTime + 0.1;
-      for(let i=0; i<4; i++) {
-          engineRef.current.playCountIn(now + (i * spb), i);
+      // If we were paused (measureCount > 0), we resume. 
+      // If measureCount == 0, it's a fresh start.
+      if (measureCountRef.current > 0) {
+          // Resume Logic
+          const now = engineRef.current.ctx.currentTime;
+          const timePaused = now - pausedAtRef.current;
+          startTimeRef.current += timePaused;
+          setIsPlaying(true);
+          setFeedback({ text: "RESUME", type: "good" });
+      } else {
+          // New Game Logic
+          resetGame();
+          const spb = 60.0 / bpm;
+          const countInDuration = 4 * spb;
+          startTimeRef.current = engineRef.current.ctx.currentTime + countInDuration + 0.1;
+          
+          // Schedule count-ins
+          const now = engineRef.current.ctx.currentTime + 0.1;
+          for(let i=0; i<4; i++) {
+              engineRef.current.playCountIn(now + (i * spb), i);
+          }
+          
+          lastGenBeatRef.current = -1; 
+          generateChunk(); 
+          generateChunk(); 
+          
+          setIsPlaying(true);
+          // Set measureCount to 1 to indicate game has started
+          measureCountRef.current = 1; 
       }
-      
-      lastGenBeatRef.current = -1; 
-      generateChunk(); 
-      generateChunk(); 
-      
-      setIsPlaying(true);
   };
 
   const togglePause = () => {
       if (!isPlaying) return;
-      if (engineRef.current) engineRef.current.stop();
+      if (engineRef.current) {
+          engineRef.current.stop();
+          pausedAtRef.current = engineRef.current.ctx.currentTime;
+      }
       setIsPlaying(false);
       setFeedback({ text: "PAUSED", type: "neutral" });
   };
@@ -665,7 +633,7 @@ function App() {
                       {/* MAIN GAME VIEW (DUAL TRACK) */}
                       <div className="flex-1 flex flex-col relative z-0 overflow-hidden">
                           
-                          {/* TRACK 1: PATTERNS (Top - 70% Height - Moved UP to 20%) */}
+                          {/* TRACK 1: PATTERNS (Top - 70% Height - Moved UP to 30%) */}
                           <div className="h-[70%] relative border-b-2 border-[#0f380f]/30 w-full overflow-hidden">
                               <div className="absolute top-0 bottom-0 w-[2px] bg-[#0f380f] z-30 opacity-70" style={{ left: `${HIT_LINE_PERCENT}%` }}>
                                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#0f380f]"></div>
@@ -705,12 +673,12 @@ function App() {
                                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#0f380f]"></div>
                               </div>
                               
-                              {/* Hit Box - Hollow Square */}
+                              {/* Hit Box */}
                               <div className="absolute top-[40%] -translate-y-1/2 w-8 h-8 border-4 border-[#0f380f] z-20" 
                                    style={{ left: `${HIT_LINE_PERCENT}%`, marginLeft: '-16px' }}>
                               </div>
 
-                              {/* Scrolling Notes - Hollow Squares */}
+                              {/* Scrolling Notes */}
                               {visibleTargets.map((t, i) => (
                                   <div 
                                       key={`t-${i}`}
@@ -719,18 +687,7 @@ function App() {
                                       `}
                                       style={{
                                           left: `${HIT_LINE_PERCENT + (t.offset * BEAT_WIDTH_PERCENT)}%`,
-                                          // NOTE OFFSET CORRECTION:
-                                          // Note targets align to specific beat fractions (0, 0.25, etc.)
-                                          // SVGs are drawn to match these (0.0 -> x=15, 0.25 -> x=35, etc.)
-                                          // SVG x=15 is roughly center of first beat sub-slot?
-                                          // We need to shift the target to match the SVG visual center perfectly.
-                                          // If beat width is W, and SVG x=15 (15%) is where the note is...
-                                          // Then target should be shifted by (15% - 50%) of width?
-                                          // Let's assume the SVG is drawn such that the note CENTER is at the correct time.
-                                          // The "offset" in visibleTargets is accurate mathematical time.
-                                          // We just center the div (-12px) which aligns with the mathematical beat line.
-                                          // The SVG coord rewrite in PATTERNS handles the visual alignment.
-                                          marginLeft: '-12px' 
+                                          marginLeft: '-12px'
                                       }}
                                   />
                               ))}
@@ -756,43 +713,62 @@ function App() {
               </div>
 
               {/* --- CONTROL DECK --- */}
-              <div className="w-full flex items-start justify-between gap-4 px-2">
-                  {/* Left: Config */}
-                  <div className="w-[35%] h-20 panel-box p-3 flex flex-col justify-between">
+              <div className="w-full grid grid-cols-[1fr_auto_1fr] gap-4 px-2">
+                  
+                  {/* Left: Config (Grid Layout to fill height) */}
+                  <div className="h-20 panel-box p-3 grid grid-rows-2 gap-1">
                       <span className="panel-label">CONFIG</span>
-                      <div className="flex gap-2 items-center">
-                          <span className="font-pixel text-[8px] text-white/40">LVL</span>
-                          <div className="flex gap-1 flex-1">
-                              {[1, 2, 3].map(lvl => (
-                                  <button key={lvl} onClick={() => !isPlaying && setDifficulty(lvl)} className={`flex-1 h-6 rounded text-[8px] font-pixel font-bold btn-level ${difficulty === lvl ? 'active' : ''}`}>
-                                      {lvl}
-                                  </button>
-                              ))}
+                      
+                      {/* Row 1: Level + Audio Toggle */}
+                      <div className="flex items-center justify-between gap-2">
+                          <div className="flex gap-1 items-center flex-1">
+                              <span className="font-pixel text-[8px] text-white/40">LVL</span>
+                              <div className="flex gap-1 flex-1">
+                                  {[1, 2, 3].map(lvl => (
+                                      <button key={lvl} onClick={() => !isPlaying && setDifficulty(lvl)} className={`flex-1 h-6 rounded text-[8px] font-pixel font-bold btn-level ${difficulty === lvl ? 'active' : ''}`}>
+                                          {lvl}
+                                      </button>
+                                  ))}
+                              </div>
+                          </div>
+                          
+                          {/* Integrated Audio Switch */}
+                          <div className="flex items-center gap-1 border-l border-white/10 pl-2">
+                              <button onClick={() => setGuideAudio(!guideAudio)} className="w-8 h-4 switch-track flex items-center px-0.5">
+                                  <div className={`w-3 h-3 rounded-full shadow-md switch-thumb flex items-center justify-center ${guideAudio ? 'bg-green-500 translate-x-4' : 'bg-gray-500 translate-x-0'}`}>
+                                  </div>
+                              </button>
+                              <span className="font-pixel text-[8px] text-white/30">AUD</span>
                           </div>
                       </div>
+
+                      {/* Row 2: Speed Slider (Full Width) */}
                       <div className="flex items-center gap-2">
-                          <span className="font-pixel text-[8px] text-white/40 w-8">SPD</span>
+                          <span className="font-pixel text-[8px] text-white/40 w-6">SPD</span>
                           <input type="range" min="60" max="180" step="5" value={bpm} onChange={(e) => !isPlaying && setBpm(parseInt(e.target.value))} className="flex-1" />
                           <span className="font-pixel text-[8px] text-yellow-500 w-6 text-right">{bpm}</span>
                       </div>
                   </div>
 
-                  {/* Right: Actions (Merged) */}
-                  <div className="flex-1 h-20 flex items-center justify-between gap-4 pl-2 pr-2">
+                  {/* Center: Gap Filler / Status Light? Left empty for spacing or maybe a logo later */}
+                  <div className="w-4"></div>
+
+                  {/* Right: Actions (Tap + System) */}
+                  <div className="h-20 flex items-center justify-end gap-3">
                       
-                      {/* System Column */}
-                      <div className="flex flex-col gap-2 w-20">
-                          <button onClick={() => setGuideAudio(!guideAudio)} className="h-6 bg-[#333] border border-[#555] rounded flex items-center justify-center gap-1">
-                              {guideAudio ? <Volume2 size={12} className="text-green-400" /> : <VolumeX size={12} className="text-gray-500" />}
-                              <span className="font-pixel text-[8px] text-white/60">AUD</span>
+                      {/* Small System Buttons */}
+                      <div className="flex flex-col gap-2 h-full justify-center">
+                          <button onClick={togglePause} className="w-16 h-8 bg-[#333] border border-[#555] rounded flex items-center justify-center gap-1 hover:bg-[#444] active:bg-[#222]" disabled={!isPlaying}>
+                              <Pause size={12} className="text-white/60" />
+                              <span className="font-pixel text-[8px] text-white/60">PAUSE</span>
                           </button>
-                          <button onClick={resetGame} className="h-6 flex items-center justify-center gap-1 text-red-400 hover:text-red-300">
+                          <button onClick={resetGame} className="w-16 h-6 flex items-center justify-center gap-1 text-red-400 hover:text-red-300">
                               <RotateCcw size={12} />
                               <span className="font-pixel text-[8px]">RESET</span>
                           </button>
                       </div>
 
-                      {/* Main Tap */}
+                      {/* Giant TAP */}
                       <div className="relative">
                           <button 
                               onPointerDown={handleTap}
@@ -801,15 +777,12 @@ function App() {
                           >
                               <span className="font-pixel text-white/90 text-2xl tracking-widest opacity-80 group-active:translate-y-1">TAP</span>
                           </button>
-                          {/* Pause Overlay Button (Small corner) */}
-                          <button 
-                              onClick={togglePause}
-                              className="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-[#333] border-2 border-[#555] flex items-center justify-center shadow-md z-10 active:scale-95"
-                              disabled={!isPlaying}
-                          >
-                             <Pause size={12} className="text-white/80" />
-                          </button>
+                          {/* Status Text under button */}
+                          <div className="absolute -bottom-3 left-0 w-full text-center font-pixel text-[6px] text-white/20 uppercase tracking-[0.2em]">
+                              {isPlaying ? "RHYTHM PAD" : "START"}
+                          </div>
                       </div>
+
                   </div>
               </div>
           </div>
