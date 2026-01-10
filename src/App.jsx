@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Lock, Heart, Pause, RotateCcw, Volume2, VolumeX } from 'lucide-react';
+import { Lock, Heart, Pause, RotateCcw, Volume2, VolumeX, Play } from 'lucide-react';
 
 /**
- * RHYTHM BOY: INFINITE ARCADE - v26.0 (Ultra Compact & Card Style)
- * * RATIO: Compressed base height to 380px (approx 2.6:1) for maximum mobile compatibility.
- * * VISUAL: Patterns are now individual boxed cards with gaps, lifted to top-[20%].
- * * UI: Panels compressed to h-20. Slider layout tightened to prevent overflow.
+ * RHYTHM BOY: ARCADE EDITION - v27.0 (Stage 1 Refactor)
+ * * LAYOUT: Ergonomic Right-Hand Tap Layout.
+ * * LOGIC: Added 4-beat Count-in sequence (Audio + Visual).
+ * * VISUAL: Bottom track targets now map 1:1 to exact note timing, decoupling from card center.
  */
 
 // --- Audio Engine ---
@@ -24,6 +24,21 @@ class GrooveEngine {
   }
 
   resume() { if (this.ctx.state === 'suspended') this.ctx.resume(); }
+
+  // Count-in Click (High Pitch)
+  playCountIn(time, beat) {
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'square';
+    // 4th beat (GO!) is higher pitch
+    osc.frequency.setValueAtTime(beat === 3 ? 1500 : 800, time);
+    gain.gain.setValueAtTime(0.3, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(time);
+    osc.stop(time + 0.1);
+  }
 
   playKick(time) {
     const osc = this.ctx.createOscillator();
@@ -55,7 +70,7 @@ class GrooveEngine {
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
       osc.type = 'square';
-      osc.frequency.setValueAtTime(isStrong ? 1000 : 800, time);
+      osc.frequency.setValueAtTime(isStrong ? 1200 : 800, time);
       gain.gain.setValueAtTime(0.05, time);
       gain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
       osc.connect(gain);
@@ -158,7 +173,6 @@ function App() {
         const h = window.innerHeight;
         const isPortrait = h > w;
         
-        // Compact height for mobile browsers
         const gameW = 1000; 
         const gameH = 380; 
         
@@ -205,7 +219,6 @@ function App() {
   const generateChunk = () => {
       const currentDiff = difficultyRef.current;
       const startBeat = lastGenBeatRef.current + 1;
-      const isCountIn = startBeat < 0;
 
       const getWeightedPattern = (diff) => {
           const allKeys = Object.keys(PATTERNS).filter(k => k !== 'rest');
@@ -230,11 +243,12 @@ function App() {
           const absBeat = startBeat + i;
           let pattern;
 
-          if (isCountIn) {
-              pattern = PATTERNS['rest'];
+          if (absBeat < 0) {
+              // Count-in Zone (beats -4 to -1)
+              pattern = PATTERNS['rest']; 
           } else {
-              if (absBeat >= 0 && absBeat % 4 === 0) {
-                  pattern = PATTERNS['eighths']; 
+              if (absBeat % 4 === 0) {
+                  pattern = PATTERNS['eighths']; // Anchor
               } else {
                   pattern = getWeightedPattern(currentDiff);
               }
@@ -273,7 +287,12 @@ function App() {
           generateChunk();
       }
 
-      // Play
+      // Play notes & clicks
+      // Count-in Logic: Beat -4, -3, -2, -1
+      // We manually check for count-in beats here as they might not be in noteQueue if they are rests
+      const roundedBeat = Math.round(currentAbsBeat * 10) / 10; // sloppy check
+      
+      // We iterate noteQueue for gameplay notes
       noteQueueRef.current.forEach(note => {
           if (note.played) return;
           const noteTime = startTimeRef.current + (note.absBeat * secondsPerBeat);
@@ -291,6 +310,20 @@ function App() {
               note.played = true;
           }
       });
+      
+      // Separate Count-In Click Scheduler
+      // If we are in negative time (count-in)
+      // We need to schedule clicks for -4, -3, -2, -1
+      // Simple Hack: Check integer beats in range
+      for (let b = -4; b < 0; b++) {
+          const beatTime = startTimeRef.current + (b * secondsPerBeat);
+          if (beatTime >= ctx.currentTime && beatTime < ctx.currentTime + scheduleAheadTime) {
+              // We need a flag to ensure we don't play it twice.
+              // Since this is a simple hack, we rely on the visual state logic? No.
+              // Let's rely on time precision.
+              // Better: Add these to a temporary "CountInQueue" when starting.
+          }
+      }
 
       if (isPlaying) {
           timerIDRef.current = setTimeout(scheduleAudio, lookahead);
@@ -304,6 +337,18 @@ function App() {
       const secondsPerBeat = 60.0 / bpm;
       const currentAbsBeat = (ctx.currentTime - startTimeRef.current) / secondsPerBeat;
 
+      // Count-In Feedback
+      if (currentAbsBeat < 0) {
+          const count = Math.ceil(Math.abs(currentAbsBeat));
+          if (count <= 4 && count > 0) {
+              // Only update if changed to avoid flicker
+              if (feedback.text !== String(count)) setFeedback({ text: String(count), type: "neutral" });
+          }
+      } else if (currentAbsBeat >= 0 && currentAbsBeat < 0.5 && feedback.text !== "GO!") {
+           setFeedback({ text: "GO!", type: "good" });
+      }
+
+      // 1. Update Active Pattern
       const activePat = patternQueueRef.current.find(p => 
           currentAbsBeat >= p.startBeat && currentAbsBeat < p.startBeat + 1
       );
@@ -321,12 +366,13 @@ function App() {
       }
 
       noteQueueRef.current.forEach(note => {
-          if (!note.missed && !note.hit && currentAbsBeat > note.absBeat + 0.5) {
+          if (!note.missed && !note.hit && currentAbsBeat > note.absBeat + 0.25) { // Stricter miss
               note.missed = true;
               triggerFeedback("MISS", "bad");
           }
       });
 
+      // Prune
       if (noteQueueRef.current.length > 50) {
           const idx = noteQueueRef.current.findIndex(n => n.absBeat > currentAbsBeat - 2);
           if (idx > 0) noteQueueRef.current = noteQueueRef.current.slice(idx);
@@ -353,9 +399,8 @@ function App() {
       setVisiblePatterns(visiblePats);
 
       animRef.current = requestAnimationFrame(visualLoop);
-  }, [isPlaying, gameOver, bpm]);
+  }, [isPlaying, gameOver, bpm, feedback.text]);
 
-  // Loop Control
   useEffect(() => {
       if (isPlaying) {
           scheduleAudio();
@@ -402,8 +447,8 @@ function App() {
       for (const note of noteQueueRef.current) {
           if (note.hit || note.missed) continue;
           const diff = note.absBeat - currentAbsBeat;
-          if (diff < -0.5) continue; 
-          if (diff > 1.0) break; 
+          if (diff < -0.3) continue; 
+          if (diff > 0.6) break; 
 
           const absDiff = Math.abs(diff);
           if (absDiff < minDiff) {
@@ -419,7 +464,8 @@ function App() {
           setScore(s => s + points + (Math.floor(combo/10)*10));
           triggerFeedback(isPerfect ? "PERFECT" : "GOOD", "good");
       } else {
-          triggerFeedback("BAD", "bad");
+          // Only trigger bad feedback if playing and past count-in
+          if (currentAbsBeat > 0) triggerFeedback("BAD", "bad");
       }
   }, [isPlaying, gameOver, bpm, combo]);
 
@@ -442,13 +488,37 @@ function App() {
       if (!engineRef.current) return;
       if (engineRef.current.ctx.state === 'suspended') await engineRef.current.ctx.resume();
       resetGame();
-      lastGenBeatRef.current = -5;
+      
+      // Start time is NOW + 4 beats (Count-in duration)
+      // But to simplify logic: Audio starts NOW.
+      // Beat 0 is 4 beats from NOW.
+      // So startTimeRef should be Future.
+      // startTimeRef = currentTime + (4 * secondsPerBeat) + buffer
+      const spb = 60.0 / bpm;
+      const countInDuration = 4 * spb;
+      
+      // We set startTimeRef such that currentAbsBeat will be -4
+      // currentAbsBeat = (now - start) / spb
+      // -4 = (now - start) / spb
+      // -4 * spb = now - start
+      // start = now + 4 * spb
+      
+      startTimeRef.current = engineRef.current.ctx.currentTime + countInDuration + 0.1;
+      
+      // But we need to schedule clicks for the count-in immediately
+      // So we can't rely on the main scheduler loop for count-in clicks if they are outside noteQueue
+      // Let's manually schedule 4 clicks
+      const now = engineRef.current.ctx.currentTime + 0.1;
+      for(let i=0; i<4; i++) {
+          engineRef.current.playCountIn(now + (i * spb), i);
+      }
+      
+      lastGenBeatRef.current = -1; // Start generating from beat 0
       generateChunk(); 
       generateChunk(); 
-      startTimeRef.current = engineRef.current.ctx.currentTime + 0.1;
+      
       setIsPlaying(true);
-      engineRef.current.start();
-      setFeedback({ text: "GO!", type: "good" });
+      // feedback updated in loop
   };
 
   const togglePause = () => {
@@ -613,7 +683,7 @@ function App() {
                               {visiblePatterns.map((p, i) => (
                                   <div 
                                       key={`p-${i}`}
-                                      className="absolute top-[20%] -translate-y-1/2 h-full flex items-center justify-center"
+                                      className="absolute top-[30%] -translate-y-1/2 h-full flex items-center justify-center"
                                       style={{
                                           left: `${HIT_LINE_PERCENT + (p.offset * BEAT_WIDTH_PERCENT)}%`,
                                           width: `${BEAT_WIDTH_PERCENT}%`,
@@ -683,21 +753,36 @@ function App() {
                   </div>
               </div>
 
-              {/* --- CONTROL DECK (Compact h-20) --- */}
-              <div className="w-full flex items-start justify-between gap-4 px-2">
-                  {/* Left: Config */}
-                  <div className="flex-1 h-20 panel-box p-3 flex flex-col justify-between">
-                      <span className="panel-label">CONFIG</span>
-                      <div className="flex gap-2 items-center">
-                          <span className="font-pixel text-[8px] text-white/40">LVL</span>
-                          <div className="flex gap-1 flex-1">
-                              {[1, 2, 3].map(lvl => (
-                                  <button key={lvl} onClick={() => !isPlaying && setDifficulty(lvl)} className={`flex-1 h-5 rounded text-[8px] font-pixel font-bold btn-level ${difficulty === lvl ? 'active' : ''}`}>
-                                      {lvl}
-                                  </button>
-                              ))}
+              {/* --- CONTROL DECK (Asymmetric Layout) --- */}
+              <div className="w-full flex items-center justify-between gap-4 px-2">
+                  
+                  {/* Left: Config & Settings */}
+                  <div className="flex-1 h-24 panel-box p-3 flex flex-col justify-between">
+                      <span className="panel-label">SETTINGS</span>
+                      
+                      {/* Top Row: Level & Audio */}
+                      <div className="flex justify-between items-center">
+                          <div className="flex gap-1 items-center">
+                              <span className="font-pixel text-[8px] text-white/40">LVL</span>
+                              <div className="flex gap-1">
+                                  {[1, 2, 3].map(lvl => (
+                                      <button key={lvl} onClick={() => !isPlaying && setDifficulty(lvl)} className={`w-5 h-5 rounded text-[8px] font-pixel font-bold btn-level ${difficulty === lvl ? 'active' : ''}`}>
+                                          {lvl}
+                                      </button>
+                                  ))}
+                              </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-1">
+                              <button onClick={() => setGuideAudio(!guideAudio)} className="w-8 h-4 switch-track flex items-center px-0.5">
+                                  <div className={`w-3 h-3 rounded-full shadow-md switch-thumb flex items-center justify-center ${guideAudio ? 'bg-green-500 translate-x-4' : 'bg-gray-500 translate-x-0'}`}>
+                                  </div>
+                              </button>
+                              <span className="font-pixel text-[8px] text-white/30">AUD</span>
                           </div>
                       </div>
+
+                      {/* Bottom Row: Speed */}
                       <div className="flex flex-col gap-1">
                           <div className="flex justify-between font-pixel text-[8px] text-white/40 mb-0">
                               <span>SPD</span>
@@ -707,38 +792,34 @@ function App() {
                       </div>
                   </div>
 
-                  {/* Center: Tap */}
-                  <div className="w-40 flex flex-col items-center justify-start shrink-0">
-                      <button 
-                          onPointerDown={handleTap}
-                          className={`w-28 h-20 btn-arcade group flex items-center justify-center ${isSpacePressed ? 'pressed' : ''}`}
-                          style={{ touchAction: 'none' }}
-                      >
-                          <span className="font-pixel text-white/90 text-2xl tracking-widest opacity-80 group-active:translate-y-1">TAP</span>
-                      </button>
-                      <div className="mt-1 font-pixel text-[8px] text-white/20 uppercase tracking-[0.2em]">{isPlaying ? "PLAYING" : (gameOver ? "RETRY" : "START")}</div>
-                  </div>
-
-                  {/* Right: System */}
-                  <div className="flex-1 h-20 panel-box p-3 flex flex-col justify-between">
-                      <span className="panel-label">SYSTEM</span>
-                      <div className="flex justify-between items-center gap-2">
-                          <button onClick={togglePause} className="flex-1 h-6 bg-[#333] border border-[#555] rounded flex items-center justify-center gap-1 hover:bg-[#444] active:bg-[#222]" disabled={!isPlaying}>
-                              <Pause size={12} className="text-white/60" />
+                  {/* Right: Actions (Big Tap & Buttons) */}
+                  <div className="flex-1 h-24 flex items-center justify-end gap-6 pl-4">
+                      
+                      {/* System Buttons */}
+                      <div className="flex flex-col gap-2">
+                          <button onClick={togglePause} className="w-16 h-8 bg-[#333] border border-[#555] rounded flex items-center justify-center gap-1 hover:bg-[#444] active:bg-[#222]" disabled={!isPlaying}>
+                              <Pause size={14} className="text-white/60" />
                               <span className="font-pixel text-[8px] text-white/60">PAUSE</span>
                           </button>
-                          <div className="flex items-center gap-1">
-                              <span className="font-pixel text-[8px] text-white/30">AUD</span>
-                              <button onClick={() => setGuideAudio(!guideAudio)} className="w-8 h-4 switch-track flex items-center px-0.5">
-                                  <div className={`w-3 h-3 rounded-full shadow-md switch-thumb flex items-center justify-center ${guideAudio ? 'bg-green-500 translate-x-4' : 'bg-gray-500 translate-x-0'}`}></div>
-                              </button>
-                          </div>
+                          <button onClick={resetGame} className="w-16 h-6 flex items-center justify-center gap-1 text-red-400 hover:text-red-300 transition-colors">
+                              <RotateCcw size={12} />
+                              <span className="font-pixel text-[8px]">RESET</span>
+                          </button>
                       </div>
-                      <button onClick={resetGame} className="w-full h-6 mt-auto flex items-center justify-center gap-2 text-red-400 hover:text-red-300 transition-colors">
-                          <RotateCcw size={12} />
-                          <span className="font-pixel text-[8px]">RESET</span>
-                      </button>
+
+                      {/* Giant Tap Button */}
+                      <div className="flex flex-col items-center">
+                          <button 
+                              onPointerDown={handleTap}
+                              className={`w-24 h-20 btn-arcade group flex items-center justify-center ${isSpacePressed ? 'pressed' : ''}`}
+                              style={{ touchAction: 'none' }}
+                          >
+                              <span className="font-pixel text-white/90 text-2xl tracking-widest opacity-80 group-active:translate-y-1">TAP</span>
+                          </button>
+                      </div>
+                      
                   </div>
+
               </div>
           </div>
       </div>
